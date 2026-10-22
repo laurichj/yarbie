@@ -12,6 +12,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from . import discovery, panel, services, websocket
 from ._vendor.yarbo_local.exceptions import YarboError
+from ._vendor.yarbo_local.registry import Registry
 from .const import CONF_SCAN, CONF_SERIAL, CONF_SIMULATOR, DOMAIN
 from .coordinator import YarbieConfigEntry, YarbieCoordinator
 from .robot import Robot
@@ -41,6 +42,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: YarbieConfigEntry) -> bool:
+    # The command registry is a YAML file parsed once per process: not on the event loop.
+    await hass.async_add_executor_job(Registry.default)
     if entry.data.get(CONF_SIMULATOR):
         robot = Robot.simulated()
     else:
