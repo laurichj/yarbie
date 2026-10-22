@@ -144,7 +144,13 @@ async def test_route_preview_is_one_job(ws: WS, entry: MockConfigEntry) -> None:
     while job["status"] == "running":
         job = (await client.receive_json())["event"]
     assert job["status"] == "done", job
-    assert job["result"]["features"] and job["result"]["total_s"] == 600.0
+    result = job["result"]
+    # The demo's route covers each area of the plan: rows across it and a lap of its edge.
+    kinds = {(f["properties"]["area_id"], f["properties"]["kind"]) for f in result["features"]}
+    assert kinds == {(1, "fill"), (1, "edge"), (2, "fill"), (2, "edge")}
+    fill = next(f for f in result["features"] if f["properties"]["kind"] == "fill")
+    assert len(fill["geometry"]["coordinates"]) > 20
+    assert result["total_s"] > 600
     assert len(calls) == 1
     # Done jobs are kept: a reloaded panel gets the same result without asking the robot.
     again = (await ws("yarbie/route/start", plan_id=1))["result"]
