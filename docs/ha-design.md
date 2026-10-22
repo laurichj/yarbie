@@ -1,6 +1,52 @@
 # yarbie as a Home Assistant integration
 
-Status: plan · 2026-10-22 · replaces `remote-design.md` (GCP), which is no longer pursued.
+Status: being built · 2026-10-22 · replaces `remote-design.md` (GCP), which is no longer pursued.
+
+## Implementation status
+
+Done on branch `ha-integration` (phases 0–6, checked in a local HA 2026.10.2 with the
+simulator):
+
+- Baseline commit; yarbo-local vendored.
+- The integration: config flow, coordinator, all platforms in the entity table, actions,
+  diagnostics, the firmware repair, the kill switch and observe-only mode.
+- The editor's websocket API and jobs.
+- The panel.
+- The map image entity, blueprints, HACS manifest, `scripts/dev_ha.sh`.
+
+Where the build differs from the plan below:
+
+- **Vendoring layout.** The subtree holds the whole upstream repo at
+  `third_party/yarbo-local`. `scripts/vendor_yarbo_local.py` copies the package and its
+  `protocol/*.yaml` into `custom_components/yarbie/_vendor/yarbo_local`, the way a wheel
+  would install them. HACS installs only `custom_components/yarbie`, and upstream keeps
+  its data outside the package.
+  - One patch: the data directory is found by package name.
+  - `--check` fails on a stale or hand-edited copy.
+  - The subtree is from upstream; the fork is not made yet.
+- **No `TESTED_FIRMWARE` constant.** The firmware rail reads the registry's own verified
+  firmware, so there is nothing to keep in sync.
+- **`probatio`, not `voluptuous`.** HA 2026.10's own integrations validate with
+  `probatio`, so yarbie does too.
+- **The panel runs in its own iframe** (`embed_iframe`), so `main.ts` kept its element
+  lookups and styles.
+  - Replies are copied into the iframe before use, because MapLibre's worker refuses
+    objects made in HA's window.
+- **The status pill polls `yarbie/info`.** It is answered from the session's state, so the
+  robot is never asked. It does not read `hass.states`.
+- **No wireless charger output sensors yet.** The scale of those fields is unresolved in
+  the field map.
+
+Not done yet:
+
+- Phase 7 (migration on the real robot) and phase 8 (removing `backend/` and the Docker
+  files).
+- The panel's phone layout and HA theme colours.
+- Entity icons.
+- The error sensor as an enum with translated fault names.
+- The run history page (TODO 1).
+- `manifest.json` has no `documentation`, `issue_tracker` or `codeowners`: they need the
+  repository's GitHub URL.
 
 ## Goal
 
