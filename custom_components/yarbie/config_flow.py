@@ -26,9 +26,11 @@ from .const import (
     OPT_GOOGLE_MAPS_KEY,
     OPT_KEEP_AWAKE,
     OPT_OBSERVE_ONLY,
+    OPT_RUN_RETENTION_DAYS,
     SIMULATOR_HOST,
 )
 from .editor import demo
+from .runlog import DEFAULT_RETENTION_DAYS
 
 
 class YarbieConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -142,6 +144,10 @@ class YarbieOptionsFlow(OptionsFlowWithReload):
                     probatio.Optional(
                         OPT_GOOGLE_MAPS_KEY, default=options.get(OPT_GOOGLE_MAPS_KEY, "")
                     ): str,
+                    probatio.Optional(
+                        OPT_RUN_RETENTION_DAYS,
+                        default=options.get(OPT_RUN_RETENTION_DAYS, DEFAULT_RETENTION_DAYS),
+                    ): probatio.All(probatio.Coerce(int), probatio.Range(min=7, max=3650)),
                 }
             ),
         )

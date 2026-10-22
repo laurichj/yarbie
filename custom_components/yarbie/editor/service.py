@@ -62,13 +62,18 @@ class MapService:
         self.last = MapView(raw, reference, mapdoc.map_revision(raw))
         return self.last
 
-    async def heatmap(self, days: int | None, refresh: bool) -> dict[str, Any]:
-        """Estimated wear from the robot's run history (read once, then on request)."""
+    async def history(self, refresh: bool = False) -> list[dict[str, Any]]:
+        """The robot's run history (read once, then on request: it is large)."""
         if refresh or self._history is None:
             self._history = await self.robot.plan_history()
+        return self._history
+
+    async def heatmap(self, days: int | None, refresh: bool) -> dict[str, Any]:
+        """Estimated wear from the robot's run history."""
+        history = await self.history(refresh)
         view = await self.load()
         return await asyncio.to_thread(
-            heatmap.estimate, view.raw, self._history, view.reference, since=heatmap.window(days)
+            heatmap.estimate, view.raw, history, view.reference, since=heatmap.window(days)
         )
 
     async def preview(self, edited: dict[str, Any]) -> list[diff.Op]:

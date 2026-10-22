@@ -20,7 +20,7 @@ from ._vendor.yarbo_local.exceptions import YarboError
 from ._vendor.yarbo_local.payloads import APP_MOWER_AREA_KEYS
 from .const import DOMAIN, OPT_GOOGLE_MAPS_KEY
 from .coordinator import YarbieCoordinator
-from .editor import mapdoc, routes
+from .editor import mapdoc, routes, runs
 from .editor.service import ConflictError, ReadOnlyError
 from .imagery import GoogleImagery
 from .jobs import Job
@@ -293,6 +293,44 @@ async def ws_area_params_save(hass: HomeAssistant, connection: websocket_api.Act
     connection.send_result(msg["id"], {"sent": sent})
 
 
+# -- run history
+
+
+@_command(
+    {
+        probatio.Required("type"): "yarbie/runs/list",
+        probatio.Optional("refresh", default=False): bool,
+        probatio.Optional("plan_id"): int,
+        probatio.Optional("limit", default=200): int,
+    }
+)
+async def ws_runs(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Every run, newest first: the robot's records joined with yarbie's own log."""
+    c = _coordinator(hass, msg)
+    merged = await c.async_runs(msg["refresh"])
+    if "plan_id" in msg:
+        merged = [r for r in merged if r["plan_id"] == msg["plan_id"]]
+    plans = sorted({(r["plan_id"], r["plan"]) for r in merged if r["plan_id"] is not None}, key=lambda p: str(p[1]))
+    connection.send_result(
+        msg["id"],
+        {
+            "runs": [{k: v for k, v in r.items() if k != "segments"} for r in merged[: msg["limit"]]],
+            "plans": [{"id": pid, "name": name} for pid, name in plans],
+            "count": len(merged),
+        },
+    )
+
+
+@_command({probatio.Required("type"): "yarbie/runs/get", probatio.Required("key"): str})
+async def ws_run(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """One run in full: its work segments, timeline, and each area's state for the map."""
+    c = _coordinator(hass, msg)
+    run = next((r for r in await c.async_runs() if r["key"] == msg["key"]), None)
+    if run is None:
+        raise LookupError("no such run")
+    connection.send_result(msg["id"], {**run, "area_states": runs.area_states(run)})
+
+
 # -- jobs
 
 
@@ -350,7 +388,7 @@ def ws_job_subscribe(
 COMMANDS = (
     ws_info, ws_map, ws_preview, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
     ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_area_params,
-    ws_area_params_save, ws_route_start, ws_job_get, ws_job_subscribe,
+    ws_area_params_save, ws_runs, ws_run, ws_route_start, ws_job_get, ws_job_subscribe,
 )
 
 

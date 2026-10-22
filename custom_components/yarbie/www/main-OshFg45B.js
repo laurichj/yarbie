@@ -1,4 +1,4 @@
-import { n as e, t } from "./api-NEaRg0qt.js";
+import { n as e, t } from "./api-DIcaCA5o.js";
 //#region node_modules/maplibre-gl/dist/maplibre-gl.mjs
 var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescriptor, a = Object.getOwnPropertyNames, o = Object.getPrototypeOf, s = Object.prototype.hasOwnProperty, c = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t.exports), l = (e, t, n, o) => {
 	if (t && typeof t == "object" || typeof t == "function") for (var c = a(t), l = 0, u = c.length, d; l < u; l++) d = c[l], !s.call(e, d) && d !== n && r(e, d, {
@@ -40839,6 +40839,9 @@ $.on("load", async () => {
 	}), $.addSource("run", {
 		type: "geojson",
 		data: GR
+	}), $.addSource("past-run", {
+		type: "geojson",
+		data: GR
 	}), $.addLayer({
 		id: "heat",
 		type: "fill",
@@ -41017,25 +41020,57 @@ $.on("load", async () => {
 		}
 	}), KR = new fR($), KR.onChange(az), KR.onSelect((e) => {
 		HR = e, Oz();
-	}), Wz();
+	}), Qz();
 	let e = Q("imagery");
-	e.innerHTML = DR.map((e) => `<option value="${e.id}" ${e.id === AR ? "selected" : ""}>${PR(e.label)}</option>`).join(""), e.addEventListener("change", () => nz(e.value)), qz(), await qR(!0), await Fz(), await Tz(), Hz();
+	e.innerHTML = DR.map((e) => `<option value="${e.id}" ${e.id === AR ? "selected" : ""}>${PR(e.label)}</option>`).join(""), e.addEventListener("change", () => nz(e.value)), tB(), await qR(!0), $.addLayer({
+		id: "past-run-fill",
+		type: "fill",
+		source: "past-run",
+		paint: {
+			"fill-color": [
+				"match",
+				["get", "state"],
+				"done",
+				"#3fb950",
+				"edge",
+				"#d29922",
+				"#f85149"
+			],
+			"fill-opacity": .35
+		}
+	}), $.addLayer({
+		id: "past-run-line",
+		type: "line",
+		source: "past-run",
+		paint: {
+			"line-color": [
+				"match",
+				["get", "state"],
+				"done",
+				"#3fb950",
+				"edge",
+				"#d29922",
+				"#f85149"
+			],
+			"line-width": 3
+		}
+	}), await Uz(), await Tz(), await Bz(!1), Xz();
 });
 async function qR(t) {
 	try {
 		FR = await e.map();
 	} catch (e) {
-		$z(`Could not read the map: ${Qz(e)}`, "error");
+		sB(`Could not read the map: ${oB(e)}`, "error");
 		return;
 	}
 	KR.load(FR.features), await ez(), !kR && FR.reference && nz(tz(FR.reference), !1), ZR(), t && YR();
 	let n = KR.locked();
-	n.length ? $z(`Loaded ${FR.features.features.length} map objects. ${n.length} could not be opened for editing and are kept unchanged (dashed): ${n.map((e) => e.properties.name).join(", ")}.`, "error") : $z(`Loaded ${FR.features.features.length} map objects.`, "ok");
+	n.length ? sB(`Loaded ${FR.features.features.length} map objects. ${n.length} could not be opened for editing and are kept unchanged (dashed): ${n.map((e) => e.properties.name).join(", ")}.`, "error") : sB(`Loaded ${FR.features.features.length} map objects.`, "ok");
 }
 function JR() {
 	if (!FR) return [];
 	let e = XR(), t = KR.locked();
-	return [...FR.features.features, ...t].filter((e) => (jR.includes(e.properties.family) || t.includes(e)) && !Uz.has(e.properties.family)).map((t) => ({
+	return [...FR.features.features, ...t].filter((e) => (jR.includes(e.properties.family) || t.includes(e)) && !Zz.has(e.properties.family)).map((t) => ({
 		type: "Feature",
 		geometry: rR(t.geometry, e),
 		properties: {
@@ -41060,7 +41095,7 @@ function ZR() {
 	KR.setOffset(XR()), $.getSource("static").setData({
 		type: "FeatureCollection",
 		features: JR()
-	}), Gz(), cz(), Cz(), yz(), zR !== null && Bz(zR), Q("offset").textContent = `${WR[0].toFixed(2)} m E, ${WR[1].toFixed(2)} m N`;
+	}), $z(), cz(), Cz(), yz(), zR !== null && Jz(zR), Q("offset").textContent = `${WR[0].toFixed(2)} m E, ${WR[1].toFixed(2)} m N`;
 	try {
 		localStorage.setItem(`yarbie.offset.${AR}`, JSON.stringify(WR));
 	} catch {}
@@ -41084,7 +41119,7 @@ async function ez() {
 	}
 	if (t.error || t.hint) {
 		let e = document.createElement("option");
-		e.disabled = !0, e.textContent = t.error ? "Google satellite (unavailable, see message)" : "Google satellite (add GOOGLE_MAPS_API_KEY to .env)", Q("imagery").prepend(e), t.error && $z(t.error, "error");
+		e.disabled = !0, e.textContent = t.error ? "Google satellite (unavailable, see message)" : "Google satellite (add GOOGLE_MAPS_API_KEY to .env)", Q("imagery").prepend(e), t.error && sB(t.error, "error");
 	}
 	for (let e of t.sources) {
 		if (DR.some((t) => t.id === e.id)) continue;
@@ -41136,13 +41171,13 @@ function rz(e) {
 }
 var iz;
 function az() {
-	Q("undo").disabled = !KR.canUndo(), Q("redo").disabled = !KR.canRedo(), dz(), Gz(), HR && Oz(), window.clearTimeout(iz), iz = window.setTimeout(oz, 350);
+	Q("undo").disabled = !KR.canUndo(), Q("redo").disabled = !KR.canRedo(), dz(), $z(), HR && Oz(), window.clearTimeout(iz), iz = window.setTimeout(oz, 350);
 }
 async function oz() {
 	try {
 		LR = (await e.preview(KR.collection())).ops;
 	} catch (e) {
-		$z(`Could not compare with the robot: ${Qz(e)}`, "error");
+		sB(`Could not compare with the robot: ${oB(e)}`, "error");
 		return;
 	}
 	sz();
@@ -41151,12 +41186,12 @@ function sz() {
 	let e = Q("ops");
 	Q("change-count").textContent = String(LR.length), Q("discard-all").disabled = !LR.length, LR.length ? (e.innerHTML = LR.map((e, t) => `<li data-i="${t}" class="${e.supported ? "" : "unsupported"}">
           <button class="discard" data-discard="${t}" title="Discard this change">✕</button>
-          <span class="kind ${e.kind}">${e.kind}</span> ${PR(Zz(e.family))}
+          <span class="kind ${e.kind}">${e.kind}</span> ${PR(aB(e.family))}
           <b>${PR(e.name)}</b>${e.changes.length ? ` <span class="hint">(${PR(e.changes.join(", "))})</span>` : ""}
           ${e.supported ? "" : `<div class="reason">Export only: ${PR(e.reason ?? "")}</div>`}
           ${e.warnings.map((e, n) => `<div class="warn">⚠ ${PR(e.text)}${e.points.length ? ` <button class="show" data-op="${t}" data-warn="${n}">Show</button>` : ""}</div>`).join("")}
         </li>`).join(""), e.querySelectorAll("button[data-discard]").forEach((e) => e.addEventListener("click", (t) => {
-		t.stopPropagation(), KR.revert(LR[Number(e.dataset.discard)].key), $z("Change discarded.");
+		t.stopPropagation(), KR.revert(LR[Number(e.dataset.discard)].key), sB("Change discarded.");
 	})), e.querySelectorAll("button.show").forEach((e) => e.addEventListener("click", (t) => {
 		t.stopPropagation(), lz(LR[Number(e.dataset.op)].warnings[Number(e.dataset.warn)].points);
 	})), e.querySelectorAll("li[data-i]").forEach((e) => e.addEventListener("click", () => {
@@ -41211,12 +41246,12 @@ async function fz() {
 	if (FR) {
 		if (!UR) UR = !0, uz();
 		else {
-			UR = !1, Q("apply").disabled = !0, $z("Sending to the robot…");
+			UR = !1, Q("apply").disabled = !0, sB("Sending to the robot…");
 			try {
 				let t = await e.apply(KR.collection(), FR.revision);
-				t.map && (FR = t.map, KR.load(FR.features), ZR()), await oz(), t.error ? $z(`Stopped after ${t.applied.length} change(s): ${t.error}`, "error") : $z(`Sent ${t.applied.length} change(s) to the robot.`, "ok"), t.backup && wz(t.backup), await Tz();
+				t.map && (FR = t.map, KR.load(FR.features), ZR()), await oz(), t.error ? sB(`Stopped after ${t.applied.length} change(s): ${t.error}`, "error") : sB(`Sent ${t.applied.length} change(s) to the robot.`, "ok"), t.backup && wz(t.backup), await Tz();
 			} catch (e) {
-				$z(Qz(e), "error"), uz();
+				sB(oB(e), "error"), uz();
 			}
 		}
 	}
@@ -41234,7 +41269,7 @@ async function vz() {
 		try {
 			hz = await e.progress();
 		} catch (e) {
-			Q("run-info").textContent = `Could not read the run: ${Qz(e)}`, mz = window.setTimeout(vz, 3e4);
+			Q("run-info").textContent = `Could not read the run: ${oB(e)}`, mz = window.setTimeout(vz, 3e4);
 			return;
 		}
 		yz(), mz = window.setTimeout(vz, 1e4);
@@ -41296,7 +41331,7 @@ async function Sz(t = !1) {
 	try {
 		xz = await e.heatmap(Number(Q("heat-days").value), t);
 	} catch (e) {
-		r.textContent = `No heat map: ${Qz(e)}`;
+		r.textContent = `No heat map: ${oB(e)}`;
 		return;
 	}
 	Cz();
@@ -41354,9 +41389,9 @@ async function Tz() {
 async function Ez(t) {
 	try {
 		let { features: n } = await e.backup(t);
-		KR.replaceAll(n.features), Q("undo-apply-box").hidden = !0, $z(`Loaded the map from ${Dz(t)}. Review the changes, then apply them to revert.`, "ok");
+		KR.replaceAll(n.features), Q("undo-apply-box").hidden = !0, sB(`Loaded the map from ${Dz(t)}. Review the changes, then apply them to revert.`, "ok");
 	} catch (e) {
-		$z(`Could not load that backup: ${Qz(e)}`, "error");
+		sB(`Could not load that backup: ${oB(e)}`, "error");
 	}
 }
 function Dz(e) {
@@ -41371,7 +41406,7 @@ function Oz() {
 	if (e.hidden = !t, !t) return;
 	let n = t.properties, r = n.id === null, i = Q("selection-body");
 	i.innerHTML = `
-    <p class="facts"><i class="sw ${n.family}"></i> ${PR(Zz(n.family))}
+    <p class="facts"><i class="sw ${n.family}"></i> ${PR(aB(n.family))}
       ${r ? "· new" : `· #${n.id}`}${n.area_m2 ? ` · ${Math.round(n.area_m2)} m²` : ""}
       ${n.family === "pathways" && n.start_id === 0 ? " · linked to dock" : ""}</p>
     <label class="field">Name<input type="text" id="sel-name" value="${PR(n.name)}" /></label>
@@ -41396,8 +41431,8 @@ function Oz() {
 		let e = aR(t.geometry.coordinates[0]), r = Q("circle-r");
 		r.value = e.cover.toFixed(1), Q("circle-info").textContent = `A circle of ${e.cover.toFixed(1)} m covers the whole shape; its corners average ${e.average.toFixed(1)} m from the centre.`, Q("circle-apply").addEventListener("click", () => {
 			let t = Number(r.value);
-			if (!(t > 0)) return $z("Give the radius in metres.", "error");
-			KR.setGeometry(a, oR(e.center, t)), $z(`Made ${n.name || "the zone"} a circle of ${t} m. It is a change to review and apply like any other.`, "ok"), Oz();
+			if (!(t > 0)) return sB("Give the radius in metres.", "error");
+			KR.setGeometry(a, oR(e.center, t)), sB(`Made ${n.name || "the zone"} a circle of ${t} m. It is a change to review and apply like any other.`, "ok"), Oz();
 		});
 	}
 	i.querySelectorAll("button[data-move]").forEach((e) => e.addEventListener("click", () => {
@@ -41430,7 +41465,7 @@ function Nz(e, t) {
 	let r = n.geometry.coordinates[0][0][1], i = eR(e * Az, t * Az, r);
 	KR.setGeometry(n.id, rR(n.geometry, i)), Mz !== n.id && (jz = [0, 0]), Mz = n.id, jz = [jz[0] + e * Az, jz[1] + t * Az];
 	let a = (e, t, n) => Math.abs(e) < 1e-9 ? "" : `${Math.abs(e).toFixed(2)} m ${e > 0 ? t : n}`;
-	$z(`Moved ${n.properties.name || "the zone"} ${[a(jz[1], "north", "south"), a(jz[0], "east", "west")].filter(Boolean).join(", ")} so far.`);
+	sB(`Moved ${n.properties.name || "the zone"} ${[a(jz[1], "north", "south"), a(jz[0], "east", "west")].filter(Boolean).join(", ")} so far.`);
 }
 async function Pz(t) {
 	let n = Q("params");
@@ -41443,7 +41478,7 @@ async function Pz(t) {
 	try {
 		({params: r, editable: i} = await e.mowerParams(t));
 	} catch (e) {
-		n.innerHTML = `<p class="hint">${PR(Qz(e))}</p>`;
+		n.innerHTML = `<p class="hint">${PR(oB(e))}</p>`;
 		return;
 	}
 	let a = (FR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null && e.properties.id !== t).map((e) => ({
@@ -41459,54 +41494,150 @@ async function Pz(t) {
 		let r = [t, ...[...n.querySelectorAll("input[data-also]:checked")].map((e) => Number(e.dataset.also))], i = [];
 		try {
 			for (let t of r) await e.updateMowerParams(t, s), i.push(t);
-			$z(`Mowing settings saved to ${i.length === 1 ? "this area" : `${i.length} areas`}.`, "ok"), HR && KR.feature(HR)?.properties.id === t && Pz(t);
+			sB(`Mowing settings saved to ${i.length === 1 ? "this area" : `${i.length} areas`}.`, "ok"), HR && KR.feature(HR)?.properties.id === t && Pz(t);
 		} catch (e) {
-			$z(`Saved to ${i.length} of ${r.length} areas, then: ${Qz(e)}`, "error"), o.disabled = !1;
+			sB(`Saved to ${i.length} of ${r.length} areas, then: ${oB(e)}`, "error"), o.disabled = !1;
 		}
 	});
 }
-async function Fz() {
+var Fz = [], Iz = null, Lz = {
+	completed: "Completed",
+	partial: "Ended early",
+	returned_to_dock: "Sent home",
+	stopped: "Stopped",
+	superseded: "Replaced",
+	running: "Running",
+	unknown: "Unknown end"
+};
+function Rz(e) {
+	return e ? (/* @__PURE__ */ new Date(e * 1e3)).toLocaleString(void 0, {
+		weekday: "short",
+		month: "short",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit"
+	}) : "";
+}
+function zz(e) {
+	if (e == null) return "";
+	let t = Math.round(e / 60);
+	return t >= 60 ? `${Math.floor(t / 60)} h ${t % 60} min` : `${t} min`;
+}
+async function Bz(t) {
+	let n = Q("runs-plan"), r = n.value ? Number(n.value) : void 0, i;
+	try {
+		i = await e.runs(t, r);
+	} catch (e) {
+		Q("runs").innerHTML = `<li class="meta">${PR(oB(e))}</li>`;
+		return;
+	}
+	Fz = i.runs;
+	let a = n.value;
+	n.innerHTML = "<option value=\"\">All plans</option>" + i.plans.map((e) => `<option value="${e.id}" ${String(e.id) === a ? "selected" : ""}>${PR(e.name)}</option>`).join(""), Q("runs").innerHTML = Fz.length ? Fz.map((e) => {
+		let t = [
+			e.work_s == null ? "" : zz(e.work_s),
+			e.progress == null ? "" : `${e.progress}%`,
+			e.charge_trips ? `${e.charge_trips} charge${e.charge_trips === 1 ? "" : "s"}` : "",
+			e.battery_used == null ? "" : `${e.battery_used}% battery`
+		].filter(Boolean);
+		return `<li data-run="${PR(e.key)}" class="${Iz === e.key ? "showing" : ""}">
+            <div><b>${PR(Rz(e.started))}</b> <span class="outcome ${PR(e.outcome)}">${PR(Lz[e.outcome] ?? e.outcome)}</span>
+              <div class="meta">${PR(e.plan ?? "Unknown plan")}${t.length ? " · " + PR(t.join(" · ")) : ""}</div></div>
+            <button data-show-run="${PR(e.key)}">${Iz === e.key ? "Hide" : "Show"}</button>
+          </li>`;
+	}).join("") : "<li class=\"meta\">No runs yet.</li>", Q("runs").querySelectorAll("button[data-show-run]").forEach((e) => e.addEventListener("click", () => Vz(e.dataset.showRun)));
+}
+async function Vz(t) {
+	if (Iz === t) Iz = null, Q("run-detail").hidden = !0, $.getSource("past-run").setData(GR);
+	else try {
+		Hz(await e.run(t));
+	} catch (e) {
+		sB(`Cannot show that run: ${oB(e)}`, "error");
+		return;
+	}
+	await Bz(!1);
+}
+function Hz(e) {
+	Iz = e.key;
+	let t = e.area_states ?? {}, n = XR(), r = (FR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null && String(e.properties.id) in t).map((e) => ({
+		type: "Feature",
+		geometry: rR(e.geometry, n),
+		properties: { state: t[String(e.properties.id)] }
+	}));
+	$.getSource("past-run").setData({
+		type: "FeatureCollection",
+		features: r
+	});
+	let i = iR(r);
+	i && $.fitBounds(i, {
+		padding: 80,
+		maxZoom: 21
+	});
+	let a = [];
+	a.push(`<div class="meta">${PR(e.plan ?? "Unknown plan")}, started ${PR(Rz(e.started))}${e.started_by ? ` by ${PR(e.started_by)}` : ""}.</div>`), e.mowed_m2 != null && e.total_m2 && a.push(`<div class="meta">Mowed ${Math.round(e.mowed_m2)} of ${Math.round(e.total_m2)} m²${e.rain ? "; rain was detected" : ""}.</div>`);
+	let o = [];
+	for (let t of e.segments ?? []) {
+		let e = t.battery_start != null && t.battery_end != null ? ` (battery ${t.battery_start}% → ${t.battery_end}%)` : "";
+		o.push([t.start, `Working${e}`]), t.end && o.push([t.end, "Back to the dock"]);
+	}
+	for (let t of e.events ?? []) {
+		let e = {
+			plan_started: "Started",
+			plan_paused: `Paused${t.reason ? `: ${t.reason}` : ""}${t.fault ? ` (${t.fault})` : t.fault_code ? ` (code ${t.fault_code})` : ""}`,
+			plan_resumed: "Resumed",
+			plan_finished: `Finished${t.reason ? `: ${t.reason.replaceAll("_", " ")}` : ""}${t.progress == null ? "" : ` at ${Math.round(t.progress)}%`}`
+		}[t.kind] ?? t.kind;
+		o.push([t.at, e]);
+	}
+	o.sort((e, t) => e[0] - t[0]), o.length && a.push(`<ul class="timeline">${o.map(([e, t]) => `<li><span>${PR((/* @__PURE__ */ new Date(e * 1e3)).toLocaleTimeString(void 0, {
+		hour: "2-digit",
+		minute: "2-digit"
+	}))}</span> ${PR(t)}</li>`).join("")}</ul>`), e.source.includes("yarbie") || a.push("<p class=\"hint\">From the robot's own record only: yarbie was not watching this run, so it cannot say why it ended.</p>"), a.push("<p class=\"hint\">Green: finished. Amber: only the edge pass was finished. Red: not finished. Shown on today&apos;s map.</p>");
+	let s = Q("run-detail");
+	s.innerHTML = a.join(""), s.hidden = !1;
+}
+async function Uz() {
 	try {
 		RR = await e.plans();
 	} catch (e) {
-		Q("plans").innerHTML = `<li class="meta">${PR(Qz(e))}</li>`;
+		Q("plans").innerHTML = `<li class="meta">${PR(oB(e))}</li>`;
 		return;
 	}
 	let t = (e) => FR?.features.features.find((t) => t.properties.family === "areas" && t.properties.id === e)?.properties.name ?? `#${e}`;
 	Q("plans").innerHTML = RR.length ? RR.map((e) => `<li data-plan="${e.id}" class="${zR === e.id ? "showing" : ""}">
-            <div><b>${PR(e.name)}</b><div class="meta">${e.area_ids.map((e) => PR(t(e))).join(", ")}</div>${Lz(e.id)}</div>
+            <div><b>${PR(e.name)}</b><div class="meta">${e.area_ids.map((e) => PR(t(e))).join(", ")}</div>${Gz(e.id)}</div>
             <span class="row" style="margin:0">
-              <button data-route="${e.id}" title="Show the route the robot would take" ${BR.get(e.id)?.kind === "computing" ? "disabled" : ""}>${Iz(e.id)}</button>
+              <button data-route="${e.id}" title="Show the route the robot would take" ${BR.get(e.id)?.kind === "computing" ? "disabled" : ""}>${Wz(e.id)}</button>
               <button data-edit="${e.id}">Edit</button>
             </span>
-          </li>`).join("") : "<li class=\"meta\">No plans.</li>", Q("plans").querySelectorAll("button[data-route]").forEach((e) => e.addEventListener("click", () => zz(Number(e.dataset.route)))), Q("plans").querySelectorAll("button[data-edit]").forEach((e) => e.addEventListener("click", () => Vz(RR.find((t) => t.id === Number(e.dataset.edit)) ?? null)));
+          </li>`).join("") : "<li class=\"meta\">No plans.</li>", Q("plans").querySelectorAll("button[data-route]").forEach((e) => e.addEventListener("click", () => qz(Number(e.dataset.route)))), Q("plans").querySelectorAll("button[data-edit]").forEach((e) => e.addEventListener("click", () => Yz(RR.find((t) => t.id === Number(e.dataset.edit)) ?? null)));
 }
-function Iz(e) {
+function Wz(e) {
 	return BR.get(e)?.kind === "computing" ? "Computing…" : zR === e ? "Hide" : "Route";
 }
-function Lz(e) {
+function Gz(e) {
 	let t = BR.get(e);
 	if (!t) return "";
 	let n = t.text;
 	return t.kind === "computing" && (n += ` (${Math.round((Date.now() - t.since) / 1e3)} s)`), `<div class="route-status ${t.kind}" data-route-status="${e}">${PR(n)}</div>`;
 }
-function Rz() {
+function Kz() {
 	let e = [...BR].filter(([, e]) => e.kind === "computing");
 	for (let [t] of e) {
 		let e = Q("plans").querySelector(`[data-route-status="${t}"]`);
-		e && (e.outerHTML = Lz(t));
+		e && (e.outerHTML = Gz(t));
 	}
 	e.length || (window.clearInterval(VR), VR = void 0);
 }
-async function zz(e) {
-	BR.get(e)?.kind !== "computing" && (zR === e ? (zR = null, BR.delete(e), $.getSource("route").setData(GR)) : await Bz(e), await Fz());
+async function qz(e) {
+	BR.get(e)?.kind !== "computing" && (zR === e ? (zR = null, BR.delete(e), $.getSource("route").setData(GR)) : await Jz(e), await Uz());
 }
-async function Bz(t) {
+async function Jz(t) {
 	BR.set(t, {
 		kind: "computing",
 		text: "The robot is working out the route; a big yard can take a minute or more.",
 		since: Date.now()
-	}), VR ??= window.setInterval(Rz, 1e3), await Fz();
+	}), VR ??= window.setInterval(Kz, 1e3), await Uz();
 	try {
 		let n = await e.route(t);
 		if (!n.features.length) {
@@ -41539,12 +41670,12 @@ async function Bz(t) {
 	} catch (e) {
 		BR.set(t, {
 			kind: "error",
-			text: `No route: ${Qz(e)}`,
+			text: `No route: ${oB(e)}`,
 			since: Date.now()
 		});
 	}
 }
-function Vz(t) {
+function Yz(t) {
 	let n = Q("plan-editor");
 	n.hidden = !1;
 	let r = (FR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null);
@@ -41564,23 +41695,23 @@ function Vz(t) {
 	};
 	Q("plan-cancel").addEventListener("click", i), Q("plan-save").addEventListener("click", async () => {
 		let r = Q("plan-name").value.trim(), a = [...n.querySelectorAll("input[data-area]:checked")].map((e) => Number(e.dataset.area));
-		if (!r || !a.length) return $z("A plan needs a name and at least one area.", "error");
+		if (!r || !a.length) return sB("A plan needs a name and at least one area.", "error");
 		try {
-			t ? await e.updatePlan(t.id, r, a) : await e.createPlan(r, a), i(), $z("Plan saved.", "ok"), await Fz();
+			t ? await e.updatePlan(t.id, r, a) : await e.createPlan(r, a), i(), sB("Plan saved.", "ok"), await Uz();
 		} catch (e) {
-			$z(Qz(e), "error");
+			sB(oB(e), "error");
 		}
 	}), Q("plan-delete")?.addEventListener("click", async (n) => {
 		let r = n.currentTarget;
 		if (!r.classList.contains("confirm")) r.classList.add("confirm"), r.textContent = "Confirm delete";
 		else try {
-			await e.deletePlan(t.id), i(), $z("Plan deleted.", "ok"), await Fz();
+			await e.deletePlan(t.id), i(), sB("Plan deleted.", "ok"), await Uz();
 		} catch (e) {
-			$z(Qz(e), "error");
+			sB(oB(e), "error");
 		}
 	});
 }
-async function Hz() {
+async function Xz() {
 	try {
 		IR = await e.status();
 	} catch {
@@ -41604,27 +41735,27 @@ async function Hz() {
 			}]
 		} : GR);
 	}
-	uz(), window.setTimeout(Hz, 4e3);
+	uz(), window.setTimeout(Xz, 4e3);
 }
-var Uz = /* @__PURE__ */ new Set();
-function Wz() {
+var Zz = /* @__PURE__ */ new Set();
+function Qz() {
 	let e = [...sR, ...jR];
-	Q("layers").innerHTML = e.map((e) => `<label><input type="checkbox" data-layer="${e}" checked /> <i class="sw ${e}"></i>${PR(Zz(e))}</label>`).join("") + "<label><input type=\"checkbox\" data-layer=\"labels\" checked /> Labels</label>", Q("layers").querySelectorAll("input[data-layer]").forEach((e) => e.addEventListener("change", () => {
+	Q("layers").innerHTML = e.map((e) => `<label><input type="checkbox" data-layer="${e}" checked /> <i class="sw ${e}"></i>${PR(aB(e))}</label>`).join("") + "<label><input type=\"checkbox\" data-layer=\"labels\" checked /> Labels</label>", Q("layers").querySelectorAll("input[data-layer]").forEach((e) => e.addEventListener("change", () => {
 		let t = e.dataset.layer;
 		if (t === "labels") {
 			$.setLayoutProperty("labels", "visibility", e.checked ? "visible" : "none");
 			return;
 		}
 		let n = t;
-		e.checked ? Uz.delete(n) : Uz.add(n), sR.includes(n) && KR.setHidden(n, !e.checked), ZR();
+		e.checked ? Zz.delete(n) : Zz.add(n), sR.includes(n) && KR.setHidden(n, !e.checked), ZR();
 	}));
 }
-function Gz() {
-	let e = XR(), t = KR.features().filter((e) => !Uz.has(e.properties.family) && e.properties.name).map((t) => ({
+function $z() {
+	let e = XR(), t = KR.features().filter((e) => !Zz.has(e.properties.family) && e.properties.name).map((t) => ({
 		type: "Feature",
 		geometry: rR({
 			type: "Point",
-			coordinates: Kz(t)
+			coordinates: eB(t)
 		}, e),
 		properties: { name: t.properties.name }
 	}));
@@ -41633,24 +41764,25 @@ function Gz() {
 		features: t
 	});
 }
-function Kz(e) {
+function eB(e) {
 	let t = e.geometry, n = t.type === "Polygon" ? t.coordinates[0].slice(0, -1) : t.type === "LineString" ? t.coordinates : [t.coordinates];
 	if (t.type === "LineString") return n[Math.floor(n.length / 2)];
 	let r = n.length || 1;
 	return [n.reduce((e, t) => e + t[0], 0) / r, n.reduce((e, t) => e + t[1], 0) / r];
 }
-function qz() {
+function tB() {
+	Q("runs-plan").addEventListener("change", () => void Bz(!1)), Q("runs-refresh").addEventListener("click", () => void Bz(!0));
 	let e = Q("tools").querySelectorAll("button[data-tool]"), t = (t) => {
-		KR.setTool(t), e.forEach((e) => e.classList.toggle("active", e.dataset.tool === t)), Q("tool-hint").textContent = t === "select" ? "Click a shape to select it. Drag its corners; drag a midpoint to add one; right-click a corner to delete it." : t === "areas" ? "Click to add corners; click the first corner to finish. New areas can be exported but not sent: the robot maps areas by driving them." : Jz.includes(t) ? "Click to add corners; click the first corner to finish. Esc cancels." : "Click to add points; click the last point again to finish. Start a pathway on the dock to link it.";
+		KR.setTool(t), e.forEach((e) => e.classList.toggle("active", e.dataset.tool === t)), Q("tool-hint").textContent = t === "select" ? "Click a shape to select it. Drag its corners; drag a midpoint to add one; right-click a corner to delete it." : t === "areas" ? "Click to add corners; click the first corner to finish. New areas can be exported but not sent: the robot maps areas by driving them." : nB.includes(t) ? "Click to add corners; click the first corner to finish. Esc cancels." : "Click to add points; click the last point again to finish. Start a pathway on the dock to link it.";
 	};
 	e.forEach((e) => e.addEventListener("click", () => t(e.dataset.tool))), t("select"), Q("run-on").addEventListener("change", () => vz()), Q("heat-on").addEventListener("change", () => Sz()), Q("heat-days").addEventListener("change", () => Sz()), Q("heat-refresh").addEventListener("click", () => Sz(!0)), Q("undo").addEventListener("click", () => KR.undo()), Q("redo").addEventListener("click", () => KR.redo()), Q("discard-all").addEventListener("click", (e) => {
 		let t = e.currentTarget;
-		t.classList.contains("confirm") ? (t.classList.remove("confirm"), t.textContent = "Discard all", KR.revertAll(), $z("All unsent changes discarded.")) : (t.classList.add("confirm"), t.textContent = `Discard ${LR.length}?`, window.setTimeout(() => {
+		t.classList.contains("confirm") ? (t.classList.remove("confirm"), t.textContent = "Discard all", KR.revertAll(), sB("All unsent changes discarded.")) : (t.classList.add("confirm"), t.textContent = `Discard ${LR.length}?`, window.setTimeout(() => {
 			t.classList.remove("confirm"), t.textContent = "Discard all";
 		}, 3e3));
 	}), Q("reload").addEventListener("click", async () => {
-		await qR(!1), await Fz();
-	}), Q("fit").addEventListener("click", YR), Q("apply").addEventListener("click", fz), Q("export").addEventListener("click", Yz), Q("import").addEventListener("change", Xz), document.querySelectorAll("button[data-nudge]").forEach((e) => e.addEventListener("click", () => {
+		await qR(!1), await Uz();
+	}), Q("fit").addEventListener("click", YR), Q("apply").addEventListener("click", fz), Q("export").addEventListener("click", rB), Q("import").addEventListener("change", iB), document.querySelectorAll("button[data-nudge]").forEach((e) => e.addEventListener("click", () => {
 		let t = e.dataset.nudge;
 		if (t === "reset") WR = [0, 0];
 		else {
@@ -41672,22 +41804,22 @@ function qz() {
 		e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" ? (e.preventDefault(), e.shiftKey ? KR.redo() : KR.undo()) : e.key === "s" ? t("select") : e.key === "n" ? t("nogozones") : e.key === "p" ? t("pathways") : (e.key === "Delete" || e.key === "Backspace") && HR && (KR.remove(HR), HR = null, Oz()));
 	});
 }
-var Jz = ["nogozones", "areas"];
-function Yz() {
+var nB = ["nogozones", "areas"];
+function rB() {
 	let e = new Blob([JSON.stringify(KR.collection(), null, 2)], { type: "application/geo+json" }), t = document.createElement("a");
 	t.href = URL.createObjectURL(e), t.download = `yarbo-map-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 19).replace(/[:T]/g, "-")}.geojson`, t.click(), URL.revokeObjectURL(t.href);
 }
-async function Xz(e) {
+async function iB(e) {
 	let t = e.target, n = t.files?.[0];
 	if (t.value = "", n) try {
 		let e = (JSON.parse(await n.text()).features ?? []).filter((e) => e && typeof e.id == "string" && sR.includes(e.properties?.family) && (e.geometry?.type === "Polygon" || e.geometry?.type === "LineString"));
 		if (!e.length) throw Error("no yarbie map objects in that file");
-		KR.replaceAll(e), $z(`Imported ${e.length} objects. Review the changes before applying.`, "ok");
+		KR.replaceAll(e), sB(`Imported ${e.length} objects. Review the changes before applying.`, "ok");
 	} catch (e) {
-		$z(`Import failed: ${Qz(e)}`, "error");
+		sB(`Import failed: ${oB(e)}`, "error");
 	}
 }
-function Zz(e) {
+function aB(e) {
 	return {
 		areas: "Area",
 		nogozones: "No-go zone",
@@ -41699,10 +41831,10 @@ function Zz(e) {
 		dock: "Dock"
 	}[e];
 }
-function Qz(e) {
+function oB(e) {
 	return e instanceof t || e instanceof Error ? e.message : String(e);
 }
-function $z(e, t = "") {
+function sB(e, t = "") {
 	let n = Q("message");
 	n.textContent = e, n.className = t;
 }

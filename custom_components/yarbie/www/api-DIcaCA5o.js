@@ -100,6 +100,11 @@ var o = {
 		area_id: e,
 		changes: t
 	}),
+	runs: (e, t) => i("runs/list", {
+		refresh: e,
+		...t === void 0 ? {} : { plan_id: t }
+	}),
+	run: (e) => i("runs/get", { key: e }),
 	log: (t, n) => e?.callService("system_log", "write", {
 		logger: "custom_components.yarbie.panel",
 		level: "warning",

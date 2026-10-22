@@ -15,6 +15,7 @@ OPT_ALLOW_WRITES = "allow_writes"
 OPT_OBSERVE_ONLY = "observe_only"
 OPT_KEEP_AWAKE = "keep_awake"
 OPT_GOOGLE_MAPS_KEY = "google_maps_key"
+OPT_RUN_RETENTION_DAYS = "run_retention_days"
 
 # Typed as a host in the config flow, this runs the built-in simulator (development).
 SIMULATOR_HOST = "simulator"

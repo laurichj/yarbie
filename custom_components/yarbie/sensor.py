@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -69,6 +70,38 @@ def _plan(c: YarbieCoordinator) -> str | None:
     return c.plan_name(run.plan_id) or (str(run.plan_id) if run.plan_id is not None else None)
 
 
+OUTCOMES = ["completed", "partial", "returned_to_dock", "stopped", "superseded", "unknown"]
+
+
+def _last(key: str) -> Callable[[YarbieCoordinator], Any]:
+    return lambda c: c.last_run.get(key) if c.last_run else None
+
+
+def _last_outcome(c: YarbieCoordinator) -> str | None:
+    if not c.last_run:
+        return None
+    outcome = c.last_run.get("outcome")
+    return outcome if outcome in OUTCOMES else "unknown"
+
+
+def _last_ended(c: YarbieCoordinator) -> datetime | None:
+    ended = _last("ended")(c) or _last("started")(c)
+    return datetime.fromtimestamp(ended, UTC) if isinstance(ended, int | float) else None
+
+
+def _last_minutes(c: YarbieCoordinator) -> float | None:
+    work = _last("work_s")(c)
+    return round(work / 60, 1) if isinstance(work, int | float) else None
+
+
+def _last_attrs(c: YarbieCoordinator) -> dict[str, Any]:
+    run = c.last_run
+    if not run:
+        return {}
+    keys = ("plan", "started_by", "charge_trips", "battery_used", "mowed_m2", "rain", "faults")
+    return {k: run[k] for k in keys if run.get(k) is not None}
+
+
 @dataclass(frozen=True, kw_only=True)
 class YarbieSensorDescription(SensorEntityDescription):
     value: Callable[[YarbieCoordinator], Any]
@@ -105,6 +138,29 @@ SENSORS: tuple[YarbieSensorDescription, ...] = (
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.MINUTES,
         value=_remaining,
+    ),
+    YarbieSensorDescription(
+        key="last_run",
+        device_class=SensorDeviceClass.ENUM,
+        options=OUTCOMES,
+        value=_last_outcome,
+        attrs=_last_attrs,
+    ),
+    YarbieSensorDescription(
+        key="last_run_ended",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value=_last_ended,
+    ),
+    YarbieSensorDescription(
+        key="last_run_duration",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        value=_last_minutes,
+    ),
+    YarbieSensorDescription(
+        key="last_run_progress",
+        native_unit_of_measurement=PERCENTAGE,
+        value=_last("progress"),
     ),
     YarbieSensorDescription(
         key="head",
