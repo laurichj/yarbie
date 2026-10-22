@@ -13,6 +13,12 @@ simulator):
 - The editor's websocket API and jobs.
 - The panel.
 - The map image entity, blueprints, HACS manifest, `scripts/dev_ha.sh`.
+- The Yarbo dashboard strategy (Settings, Dashboards, Add dashboard, Yarbo).
+- The run history (TODO 1):
+  - the robot's records joined with yarbie's run log in `/config/yarbie/runs`
+  - the panel's Runs section
+  - last-run sensors
+  - a retention option
 
 Where the build differs from the plan below:
 
@@ -23,7 +29,8 @@ Where the build differs from the plan below:
   its data outside the package.
   - One patch: the data directory is found by package name.
   - `--check` fails on a stale or hand-edited copy.
-  - The subtree is from upstream; the fork is not made yet.
+  - The subtree came from upstream at the pinned commit. Later pulls come from the
+    fork, `laurichj/yarbo-local` (remote `yarbo-local`).
 - **No `TESTED_FIRMWARE` constant.** The firmware rail reads the registry's own verified
   firmware, so there is nothing to keep in sync.
 - **`probatio`, not `voluptuous`.** HA 2026.10's own integrations validate with
@@ -44,9 +51,8 @@ Not done yet:
 - The panel's phone layout and HA theme colours.
 - Entity icons.
 - The error sensor as an enum with translated fault names.
-- The run history page (TODO 1).
-- `manifest.json` has no `documentation`, `issue_tracker` or `codeowners`: they need the
-  repository's GitHub URL.
+- The run history shows past runs on today's map. Only the map revision is kept, not a
+  copy of the map as it was.
 
 ## Goal
 

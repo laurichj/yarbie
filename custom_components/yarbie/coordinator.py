@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -31,15 +31,18 @@ from .const import (
     OPT_ALLOW_WRITES,
     OPT_KEEP_AWAKE,
     OPT_OBSERVE_ONLY,
+    OPT_RUN_RETENTION_DAYS,
     PLANS_INTERVAL_S,
     PUSH_INTERVAL_S,
     SIGNAL_PLAN_EVENT,
     STORAGE_VERSION,
 )
+from .editor import runs
 from .editor.backups import BackupStore
 from .editor.service import MapService, ReadOnlyError
 from .jobs import Jobs
 from .robot import Robot
+from .runlog import DEFAULT_RETENTION_DAYS, RunLog, RunRecorder
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,6 +97,12 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         self._tracker_store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.runs"
         )
+        self.runlog = RunLog(
+            self.storage_dir,
+            int(entry.options.get(OPT_RUN_RETENTION_DAYS, DEFAULT_RETENTION_DAYS)),
+        )
+        self.recorder = RunRecorder(self._save_run, self._plan_info, self._map_revision)
+        self.last_run: dict[str, Any] | None = None  # newest run, robot and log joined
         self._unsubs: list[Callable[[], None]] = []
         self._pending_push: CALLBACK_TYPE | None = None
         self._last_push = 0.0
@@ -184,10 +193,16 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
             _LOGGER.warning("first read from the robot failed: %s", err)
         self.check_firmware()
         self.async_set_updated_data(self.robot.state)
-        # The map can take the robot many seconds to send; entities do not wait for it.
+        # The map and the run history can take the robot many seconds to send; entities
+        # do not wait for them.
         self.entry.async_create_background_task(
-            self.hass, self.async_load_map(), f"{DOMAIN} first map read"
+            self.hass, self._first_reads(), f"{DOMAIN} first map and history read"
         )
+
+    async def _first_reads(self) -> None:
+        await self.async_load_map()
+        await self.hass.async_add_executor_job(self.runlog.prune)
+        await self.async_refresh_runs()
 
     async def async_load_map(self) -> None:
         try:
@@ -223,6 +238,7 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         now = time.time()
         for event in self.tracker.on_state(state, now):
             self._plan_event(event)
+        self.recorder.on_state(state)
         signature = _signature(state)
         if signature != self._last_signature:
             self._last_signature = signature
@@ -264,9 +280,57 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
                 self.hass.async_create_task(self._refresh_plans())
 
     def _plan_event(self, event: LifecycleEvent) -> None:
+        self.recorder.on_event(event, self.robot.state)
         async_dispatcher_send(self.hass, SIGNAL_PLAN_EVENT.format(self.entry.entry_id), event)
         if event.kind == "plan_finished":
             self.hass.async_create_task(self._tracker_store.async_save(self.tracker.to_dict()))
+            # The robot adds its own record of the run once it has ended.
+            self.entry.async_create_background_task(
+                self.hass, self.async_refresh_runs(refresh=True), f"{DOMAIN} run history"
+            )
+
+    # -- run history
+
+    @callback
+    def _save_run(self, entry: dict[str, Any]) -> None:
+        self.hass.async_add_executor_job(self.runlog.save, entry)
+
+    def _plan_info(self, plan_id: int | None) -> tuple[str | None, list[int]]:
+        plan = next((p for p in self.plans if p.id == plan_id), None)
+        return (plan.name, list(plan.area_ids)) if plan else (None, [])
+
+    def _map_revision(self) -> str | None:
+        return self.service.last.revision if self.service.last else None
+
+    async def async_runs(self, refresh: bool = False) -> list[dict[str, Any]]:
+        """Every run: the robot's history joined with yarbie's log, newest first."""
+        try:
+            history = await self.service.history(refresh)
+        except (YarboError, TimeoutError) as err:
+            _LOGGER.warning("reading the run history failed: %s", err)
+            history = []
+        log = await self.hass.async_add_executor_job(self.runlog.entries)
+        if self.recorder.current is not None:
+            log = [e for e in log if e.get("started") != self.recorder.current["started"]]
+            log.append(self.recorder.current)
+        return runs.merge(history, log)
+
+    async def async_refresh_runs(self, refresh: bool = False) -> None:
+        merged = await self.async_runs(refresh)
+        self.last_run = next((r for r in merged if r["outcome"] != "running"), None)
+        self.async_update_listeners()
+
+    async def async_start_plan(self, plan_id: int, context: Context | None) -> None:
+        """Start a plan, noting who asked so the run log can say."""
+        self.recorder.note_start(await self._who(context))
+        await self.run_control(lambda: self.robot.start_plan(plan_id))
+
+    async def _who(self, context: Context | None) -> str:
+        if context is None:
+            return "Home Assistant"
+        if context.user_id and (user := await self.hass.auth.async_get_user(context.user_id)):
+            return user.name or "a Home Assistant user"
+        return "a Home Assistant automation" if context.parent_id else "Home Assistant"
 
     async def _refresh_plans(self, _now: Any = None) -> None:
         try:

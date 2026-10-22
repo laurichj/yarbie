@@ -160,3 +160,40 @@ def route(area: list[tuple[float, float]], spacing: float = 0.6) -> tuple[list[t
         y += spacing
     edge = [*area, area[0]]
     return rows, edge
+
+
+def history(now: float) -> list[dict[str, Any]]:
+    """Past runs, shaped like ``read_all_plan_history`` records (firmware 3.14.11)."""
+    day = 86400
+    whole = {"areaIds": [1, 2], "enable_self_order": True, "id": 1, "name": "Whole yard"}
+    front = {"areaIds": [1], "enable_self_order": True, "id": 2, "name": "Front only"}
+
+    def run(run_id: int, plan: dict[str, Any], start: int, segments: list[tuple[int, int, int, int]],
+            pct: int, mowed: float, total: float, finished: list[int]) -> dict[str, Any]:
+        return {
+            "id": run_id,
+            "plan": plan,
+            "startTime": start,
+            "endTime": start + segments[-1][1],
+            "startTimeV": [start + a for a, _, _, _ in segments],
+            "endTimeV": [start + b for _, b, _, _ in segments],
+            "start_battery_capacity": [c for _, _, c, _ in segments],
+            "end_battery_capacity": [d for _, _, _, d in segments],
+            "duration": sum(b - a for a, b, _, _ in segments),
+            "schedule_end_percent": pct,
+            "actualCleanArea": mowed,
+            "finishCleanArea": mowed,
+            "totalCleanArea": total,
+            "finishIds": [{"clean_times": 1, "id": a, "move_type": m} for a in finished for m in (0, 1)],
+            "clean_area_ids": [{"clean_times": 1, "id": a, "move_type": m} for a in plan["areaIds"] for m in (0, 1)],
+            "finishType": 0,
+            "startType": 0,
+            "head_type": 5,
+        }
+
+    base = int(now) - int(now) % day
+    return [
+        run(1, whole, base - 7 * day + 9 * 3600, [(0, 3100, 96, 41), (4900, 6400, 95, 70)], 100, 540.0, 540.0, [1, 2]),
+        run(2, front, base - 2 * day + 15 * 3600, [(0, 1400, 88, 61)], 52, 112.0, 215.0, []),
+        run(3, whole, base - 1 * day + 10 * 3600, [(0, 3300, 97, 38), (5200, 6000, 94, 82)], 100, 540.0, 540.0, [1, 2]),
+    ]

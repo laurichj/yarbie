@@ -72,6 +72,16 @@ export const LAYOUT = `
         </section>
 
         <section>
+          <h2>Runs</h2>
+          <div class="row" style="margin-top:0">
+            <select id="runs-plan"><option value="">All plans</option></select>
+            <button id="runs-refresh" title="Read the run history from the robot again">↻</button>
+          </div>
+          <ul id="runs" class="plans runs"></ul>
+          <div id="run-detail" hidden></div>
+        </section>
+
+        <section>
           <h2>View</h2>
           <div class="heat">
             <label class="check"><input type="checkbox" id="heat-on" /> Wear heat map (estimated)</label>

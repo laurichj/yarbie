@@ -45,7 +45,8 @@
           "observe_only": "Observe only (send the robot nothing)",
           "keep_awake": "Keep the robot awake",
           "scan": "Network to scan if the robot moves",
-          "google_maps_key": "Google Maps key (satellite imagery in the Yard editor)"
+          "google_maps_key": "Google Maps key (satellite imagery in the Yard editor)",
+          "run_retention_days": "Keep run records for (days)"
         },
         "data_description": {
           "observe_only": "For running beside another integration: reads only, never takes the robot's controller.",
@@ -233,6 +234,26 @@
       },
       "right_wheel_speed": {
         "name": "Right wheel speed"
+      },
+      "last_run": {
+        "name": "Last run",
+        "state": {
+          "completed": "Completed",
+          "partial": "Ended early",
+          "returned_to_dock": "Sent home",
+          "stopped": "Stopped",
+          "superseded": "Replaced by another run",
+          "unknown": "Unknown"
+        }
+      },
+      "last_run_ended": {
+        "name": "Last run ended"
+      },
+      "last_run_duration": {
+        "name": "Last run work time"
+      },
+      "last_run_progress": {
+        "name": "Last run progress"
       }
     },
     "switch": {

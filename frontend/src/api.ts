@@ -121,6 +121,31 @@ export interface RouteCollection {
   total_s: number | null;
 }
 
+/** One run: the robot's record joined with yarbie's own log where it watched. */
+export interface Run {
+  key: string;
+  plan_id: number | null;
+  plan: string | null;
+  area_ids: number[];
+  started: number;
+  ended: number | null;
+  work_s: number | null;
+  progress: number | null;
+  mowed_m2: number | null;
+  total_m2: number | null;
+  charge_trips: number | null;
+  battery_used: number | null;
+  outcome: string;
+  source: ("robot" | "yarbie")[];
+  reason?: string | null;
+  started_by?: string | null;
+  faults?: number[];
+  rain?: boolean;
+  events?: { at: number; kind: string; reason?: string; fault_code?: number; fault?: string; progress?: number }[];
+  segments?: { start: number; end: number | null; battery_start: number | null; battery_end: number | null }[];
+  area_states?: Record<string, "done" | "edge" | "left">;
+}
+
 /** What the panel needs from the ``hass`` object Home Assistant hands it. */
 export interface Hass {
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
@@ -258,6 +283,12 @@ export const api = {
     }),
   updateMowerParams: (areaId: number, changes: Record<string, unknown>) =>
     call<{ sent: Record<string, unknown> }>("area_params/save", { area_id: areaId, changes }),
+  runs: (refresh: boolean, planId?: number) =>
+    call<{ runs: Run[]; plans: { id: number; name: string }[]; count: number }>("runs/list", {
+      refresh,
+      ...(planId === undefined ? {} : { plan_id: planId }),
+    }),
+  run: (key: string) => call<Run>("runs/get", { key }),
   log: (kind: string, detail: unknown) =>
     hass?.callService("system_log", "write", {
       logger: "custom_components.yarbie.panel",

@@ -59,7 +59,7 @@ async def _start_plan(call: ServiceCall) -> None:
         plan_id = c.selected_plan_id()
     if plan_id is None:
         raise ServiceValidationError("the robot has no plans")
-    await c.run_control(lambda: c.robot.start_plan(plan_id))
+    await c.async_start_plan(plan_id, call.context)
 
 
 async def _set_lights(call: ServiceCall) -> None:

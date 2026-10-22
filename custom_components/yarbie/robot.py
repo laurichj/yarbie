@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from collections.abc import Callable, Coroutine, Sequence
 from typing import Any
 
@@ -37,6 +38,9 @@ LIGHT_CHANNELS = (
 class _DemoSimulator(Simulator):
     """The packaged simulator, answering with the demo yard's own reference, and with
     routes that cover its areas (the packaged one returns a 1 m stub at the origin)."""
+
+    def cmd_read_all_plan_history(self, value: Any) -> None:
+        self._feedback("read_all_plan_history", 0, "", {"data": demo.history(time.time())})
 
     def cmd_preview_plan_path(self, value: Any) -> None:
         wanted = value.get("id") if isinstance(value, dict) else None
