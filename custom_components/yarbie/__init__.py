@@ -24,6 +24,7 @@ PLATFORMS = [
     Platform.BUTTON,
     Platform.DEVICE_TRACKER,
     Platform.EVENT,
+    Platform.IMAGE,
     Platform.LAWN_MOWER,
     Platform.LIGHT,
     Platform.SELECT,

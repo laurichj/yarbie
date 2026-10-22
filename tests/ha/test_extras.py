@@ -100,3 +100,46 @@ async def test_accepting_untested_firmware(hass: HomeAssistant, entry: MockConfi
     assert entry.data[CONF_ACCEPTED_FIRMWARE] == "9.9.9"
     assert coordinator.writable
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+
+def test_translations_match_strings() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).parents[2] / "custom_components" / "yarbie"
+    assert (root / "translations" / "en.json").read_text() == (root / "strings.json").read_text()
+
+
+async def test_blueprints_are_valid(hass: HomeAssistant) -> None:
+    """Each blueprint parses, and with sample inputs is a valid automation."""
+    from pathlib import Path
+
+    from homeassistant.components.automation.config import (
+        AUTOMATION_BLUEPRINT_SCHEMA,
+        async_validate_config_item,
+    )
+    from homeassistant.components.blueprint.models import Blueprint, BlueprintInputs
+    from homeassistant.util.yaml import load_yaml_dict
+
+    notify = [{"action": "persistent_notification.create", "data": {"message": "hi"}}]
+    samples = {
+        "rain_pause": {"rain": "binary_sensor.yarbo_rain", "mower": "lawn_mower.yarbo"},
+        "low_battery": {
+            "battery": "sensor.yarbo_battery",
+            "charging": "binary_sensor.yarbo_charging",
+            "notify": notify,
+        },
+        "job_complete": {"plan_event": "event.yarbo_plan", "notify": notify},
+    }
+    folder = Path(__file__).parents[2] / "blueprints" / "automation" / "yarbie"
+    for path in sorted(folder.glob("*.yaml")):
+        blueprint = Blueprint(
+            load_yaml_dict(str(path)), expected_domain="automation", schema=AUTOMATION_BLUEPRINT_SCHEMA
+        )
+        inputs = BlueprintInputs(
+            blueprint, {"use_blueprint": {"path": path.name, "input": samples[path.stem]}}
+        )
+        inputs.validate()
+        config = inputs.async_substitute()
+        config.pop("use_blueprint", None)
+        validated = await async_validate_config_item(hass, path.stem, {"id": path.stem, **config})
+        assert validated is not None and not getattr(validated, "validation_error", None), path.name

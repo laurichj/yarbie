@@ -81,3 +81,14 @@ async def test_untested_firmware_turns_writes_off(hass: HomeAssistant, entry: Mo
 async def test_unload(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_map_image(hass: HomeAssistant, entry: MockConfigEntry, hass_client: Any) -> None:
+    await entry.runtime_data.async_load_map()
+    await hass.async_block_till_done()
+    image = state(hass, "image.yarbo_map")
+    client = await hass_client()
+    response = await client.get(image.attributes["entity_picture"])
+    assert response.status == 200 and response.content_type == "image/svg+xml"
+    body = await response.text()
+    assert body.startswith("<svg") and "Flower bed" in body
