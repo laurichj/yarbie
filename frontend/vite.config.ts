@@ -1,10 +1,16 @@
 import { defineConfig } from "vite";
 
+// The panel is built into the integration, which serves it to Home Assistant.
 export default defineConfig({
-  build: { chunkSizeWarningLimit: 2000 },
-  server: {
-    port: 5173,
-    // YARBIE_API points the dev page at another yarbie, e.g. a second one under test.
-    proxy: { "/api": process.env.YARBIE_API ?? "http://127.0.0.1:8765" },
+  base: "./",
+  build: {
+    outDir: "../custom_components/yarbie/www",
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 2000,
+    lib: {
+      entry: "src/panel.ts",
+      formats: ["es"],
+      fileName: () => "yarbie-panel.js",
+    },
   },
 });

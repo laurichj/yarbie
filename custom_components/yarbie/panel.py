@@ -40,6 +40,8 @@ async def async_register(hass: HomeAssistant) -> None:
         # The hash makes a rebuilt panel load at once despite the long cache headers.
         module_url=f"{URL_BASE}/{MODULE}?v={digest}",
         require_admin=True,
+        # Its own document: the editor's styles and element lookups stay as they were.
+        embed_iframe=True,
         config={},
     )
 
