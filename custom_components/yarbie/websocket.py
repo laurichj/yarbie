@@ -93,6 +93,12 @@ async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
         c.check_writes()
     except ReadOnlyError as err:
         reason = str(err)
+    state = c.robot.state
+    position = None
+    if (lonlat := c.position_wgs84()) is not None and state.position is not None:
+        position = {"lat": lonlat[0], "lon": lonlat[1], "phi": state.position[2]}
+    # Answered from what the session already holds: the panel polls this, the robot is
+    # not asked anything.
     connection.send_result(
         msg["id"],
         {
@@ -103,7 +109,10 @@ async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
             "writable": c.writable,
             "read_only_reason": reason,
             "busy": c.robot.busy,
-            "firmware": c.robot.state.firmware,
+            "firmware": state.firmware,
+            "activity": state.activity.value,
+            "battery": state.battery,
+            "position": position,
             "map_stale": c.map_stale,
         },
     )

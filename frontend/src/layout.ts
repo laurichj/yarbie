@@ -1,21 +1,15 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>yarbie</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%233fb950%22/%3E%3Cpath d=%22M4 5h8l-2 6H6z%22 fill=%22%23f85149%22/%3E%3C/svg%3E" />
-  </head>
-  <body>
-    <div id="app">
+// The editor's markup, put into the panel's document before main.ts looks for it.
+
+export const LAYOUT = `
+<div id="app">
       <aside id="panel">
         <header>
-          <h1>yarbie</h1>
+          <h1>Yard editor</h1>
           <span id="status" class="pill">connecting…</span>
         </header>
         <div id="demo-banner" class="banner" hidden>
-          <b>Demo yard</b>: a simulated robot, not yours. To use your robot, set
-          <code>YARBIE_SOURCE=lan</code> in <code>.env</code> and restart yarbie.
+          <b>Demo yard</b>: a simulated robot, not yours. To use your robot, add it under
+          Settings, Devices &amp; services, yarbie.
         </div>
 
         <section>
@@ -108,6 +102,4 @@
       </aside>
       <div id="map"></div>
     </div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
-</html>
+`;

@@ -1,15 +1,20 @@
-// Diagnostics, only when the page is opened with ?debug: errors and what each click on
-// the map did are sent to the server's data/client.log for someone to read.
+// Diagnostics, only when the panel is opened with ?debug: errors and what each click on
+// the map did go to Home Assistant's system log for someone to read.
 
-export const DEBUG = new URLSearchParams(location.search).has("debug");
+import { api } from "./api";
+
+const search = (() => {
+  try {
+    return window.parent.location.search || location.search;
+  } catch {
+    return location.search;
+  }
+})();
+export const DEBUG = new URLSearchParams(search).has("debug");
 
 export function debugLog(kind: string, detail: unknown = {}) {
   if (!DEBUG) return;
-  void fetch("/api/client-log", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind, detail, url: location.href }),
-  }).catch(() => {});
+  void api.log(kind, detail)?.catch(() => {});
 }
 
 export function installDebug(container: HTMLElement) {
