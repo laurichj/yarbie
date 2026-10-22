@@ -100,12 +100,15 @@ python3 scripts/vendor_yarbo_local.py --check
 
 ### yarbo-local
 
-`third_party/yarbo-local` is a `git subtree` of the library, pinned to the commit the
-protocol was verified with. `custom_components/yarbie/_vendor/yarbo_local` is a copy made
-from it by `scripts/vendor_yarbo_local.py`, never edited by hand. To update:
+`third_party/yarbo-local` is a `git subtree` of the library, from our fork
+([laurichj/yarbo-local](https://github.com/laurichj/yarbo-local), remote `yarbo-local`),
+pinned to the commit the protocol was verified with.
+`custom_components/yarbie/_vendor/yarbo_local` is a copy made from it by
+`scripts/vendor_yarbo_local.py`, never edited by hand. Fixes go to the fork first.
+To update (after syncing the fork with upstream, or committing a fix there):
 
 ```sh
-git subtree pull --prefix=third_party/yarbo-local https://github.com/yarbo-local/yarbo-local <commit> --squash
+git subtree pull --prefix=third_party/yarbo-local yarbo-local <commit> --squash
 python3 scripts/vendor_yarbo_local.py
 ```
 
