@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import math
 
-from yarbie import demo, diff, mapdoc
+from custom_components.yarbie.editor import demo, diff, mapdoc
 
 
 def _features() -> dict:
