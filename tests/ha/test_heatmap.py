@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from yarbie import demo, heatmap
+from custom_components.yarbie.editor import demo, heatmap
 
 
 def run(areas: list[int], *, segments: int = 1, laps: int = 2, start: int = 1_700_000_000) -> dict[str, Any]:

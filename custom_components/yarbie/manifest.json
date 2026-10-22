@@ -1,0 +1,14 @@
+{
+  "domain": "yarbie",
+  "name": "Yarbie",
+  "after_dependencies": ["frontend", "panel_custom", "persistent_notification"],
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["http", "network", "websocket_api"],
+  "dhcp": [{ "macaddress": "C8FE0F*" }],
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "loggers": ["custom_components.yarbie._vendor.yarbo_local"],
+  "requirements": ["aiomqtt==2.5.1"],
+  "version": "0.2.0"
+}
