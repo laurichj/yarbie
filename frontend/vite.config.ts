@@ -8,9 +8,10 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 2000,
     lib: {
-      entry: "src/panel.ts",
+      // The panel, and the dashboard strategy HA loads on every page (kept tiny).
+      entry: { "yarbie-panel": "src/panel.ts", "yarbie-dashboard": "src/dashboard.ts" },
       formats: ["es"],
-      fileName: () => "yarbie-panel.js",
+      fileName: (_format, name) => `${name}.js`,
     },
   },
 });

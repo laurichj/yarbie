@@ -57,6 +57,10 @@ Home Assistant 2026.10 or newer, able to reach the robot on TCP port 1883.
    scan the network, or type the robot's address. Home Assistant also offers the robot
    when its router hands it an address (DHCP discovery).
 3. **Yard editor** appears in the sidebar for admins.
+4. For a dashboard: Settings, Dashboards, Add dashboard, **Yarbo** (under Community
+   dashboards). It lays out the robot, its controls, the map and recent activity in
+   three columns, and builds itself from the robot's entities each time it opens, so
+   renaming them needs no editing. With two robots it gets a view each.
 
 The robot's address is kept and checked at each start; if the robot has moved, yarbie
 scans for it by serial. Set a subnet in the options if the robot is on another network.
