@@ -548,10 +548,12 @@ function updateApplyButton() {
   button.className = armedApply ? "confirm" : "primary";
   const hint = $("apply-hint");
   if (!writable) {
-    hint.textContent =
-      status?.source === "cloud"
-        ? "Read-only: the cloud source cannot change the robot. Export your edits, or run yarbie on the robot's network."
-        : "Not connected to the robot.";
+    // The integration says why (untested firmware, observe only, writes turned off).
+    hint.textContent = !status?.connected
+      ? "Not connected to the robot."
+      : status.error
+        ? `Read-only: ${status.error}.`
+        : "Read-only.";
   } else if (status?.busy) {
     hint.textContent = "The robot is in a plan. Stop or finish it before changing the map.";
   } else if (ops.length > sendable) {

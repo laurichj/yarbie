@@ -365,7 +365,7 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
             severity=ir.IssueSeverity.WARNING,
             translation_key="untested_firmware",
             translation_placeholders={"firmware": firmware, "tested": ", ".join(verified)},
-            data={"entry_id": self.entry.entry_id, "firmware": firmware},
+            data={"entry_id": self.entry.entry_id, "firmware": firmware, "tested": ", ".join(verified)},
         )
 
     # -- helpers for entities

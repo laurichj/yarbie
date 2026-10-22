@@ -41237,7 +41237,7 @@ function uz() {
 	let e = Q("apply"), t = LR.filter((e) => e.supported).length, n = !!IR?.writable;
 	e.disabled = !n || t === 0 || !!IR?.busy, e.textContent = UR ? `Confirm: send ${t} to robot` : "Apply to robot", e.className = UR ? "confirm" : "primary";
 	let r = Q("apply-hint");
-	r.textContent = n ? IR?.busy ? "The robot is in a plan. Stop or finish it before changing the map." : LR.length > t ? `${LR.length - t} change(s) can only be exported, not sent.` : t ? "A backup of the robot's map is saved before anything is sent." : "" : IR?.source === "cloud" ? "Read-only: the cloud source cannot change the robot. Export your edits, or run yarbie on the robot's network." : "Not connected to the robot.";
+	r.textContent = n ? IR?.busy ? "The robot is in a plan. Stop or finish it before changing the map." : LR.length > t ? `${LR.length - t} change(s) can only be exported, not sent.` : t ? "A backup of the robot's map is saved before anything is sent." : "" : IR?.connected ? IR.error ? `Read-only: ${IR.error}.` : "Read-only." : "Not connected to the robot.";
 }
 function dz() {
 	UR && (UR = !1, uz());
