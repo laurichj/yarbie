@@ -1,4 +1,4 @@
-"""The Yard editor: a sidebar panel served from this integration's ``www/``."""
+"""The Yard editor (a sidebar panel) and the Yarbo dashboard strategy, served from ``www/``."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import logging
 from pathlib import Path
 
-from homeassistant.components import panel_custom
+from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
 
@@ -16,6 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 WWW = Path(__file__).parent / "www"
 MODULE = "yarbie-panel.js"
+DASHBOARD = "yarbie-dashboard.js"
 URL_BASE = f"/{DOMAIN}_static"
 PANEL_URL = "yard-editor"
 
@@ -31,6 +32,11 @@ async def async_register(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(WWW), cache_headers=True)]
     )
+    # Settings > Dashboards > Add dashboard lists it as "Yarbo".
+    dashboard = WWW / DASHBOARD
+    if await hass.async_add_executor_job(dashboard.is_file):
+        version = await hass.async_add_executor_job(_digest, dashboard)
+        frontend.add_extra_js_url(hass, f"{URL_BASE}/{DASHBOARD}?v={version}")
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL,
