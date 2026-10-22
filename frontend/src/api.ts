@@ -159,7 +159,9 @@ export class ApiError extends Error {
 async function call<T>(type: string, data: Record<string, unknown> = {}): Promise<T> {
   if (!hass) throw new ApiError(503, "not connected to Home Assistant");
   try {
-    return await hass.callWS<T>({ type: `yarbie/${type}`, ...data });
+    // The reply is built in HA's window, outside this iframe. MapLibre's worker only
+    // takes plain objects of its own window, so copy it over.
+    return structuredClone(await hass.callWS<T>({ type: `yarbie/${type}`, ...data }));
   } catch (err) {
     const e = err as { code?: string; message?: string };
     throw new ApiError(STATUS[e.code ?? ""] ?? 500, e.message ?? String(err), e.code);
@@ -185,7 +187,8 @@ async function job<T>(start: string, data: Record<string, unknown>): Promise<T> 
   return await new Promise<T>((resolve, reject) => {
     let unsubscribe: (() => Promise<void>) | null = null;
     let settled = false;
-    const done = (j: Job<T>) => {
+    const done = (event: Job<T>) => {
+      const j = structuredClone(event);
       if (j.status === "running" || settled) return;
       settled = true;
       void unsubscribe?.();

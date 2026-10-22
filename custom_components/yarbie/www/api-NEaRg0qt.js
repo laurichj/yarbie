@@ -20,10 +20,10 @@ var n = {
 async function i(t, i = {}) {
 	if (!e) throw new r(503, "not connected to Home Assistant");
 	try {
-		return await e.callWS({
+		return structuredClone(await e.callWS({
 			type: `yarbie/${t}`,
 			...i
-		});
+		}));
 	} catch (e) {
 		let t = e;
 		throw new r(n[t.code ?? ""] ?? 500, t.message ?? String(e), t.code);
@@ -37,10 +37,11 @@ async function a(t, n) {
 	return a.status === "running" ? await new Promise((t, n) => {
 		let r = null, i = !1;
 		e.connection.subscribeMessage((e) => {
-			if (!(e.status === "running" || i)) {
+			let a = structuredClone(e);
+			if (!(a.status === "running" || i)) {
 				i = !0, r?.();
 				try {
-					t(o(e));
+					t(o(a));
 				} catch (e) {
 					n(e);
 				}
