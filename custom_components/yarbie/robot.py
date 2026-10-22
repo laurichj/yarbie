@@ -7,6 +7,7 @@ verified against the phone app, so the robot stores what the app would have sent
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Callable, Coroutine, Sequence
 from typing import Any
 
@@ -34,7 +35,53 @@ LIGHT_CHANNELS = (
 
 
 class _DemoSimulator(Simulator):
-    """The packaged simulator, answering with the demo yard's own reference."""
+    """The packaged simulator, answering with the demo yard's own reference, and with
+    routes that cover its areas (the packaged one returns a 1 m stub at the origin)."""
+
+    def cmd_preview_plan_path(self, value: Any) -> None:
+        wanted = value.get("id") if isinstance(value, dict) else None
+        plan = next((p for p in self.plans if p.get("id") == wanted), None)
+        if plan is None:
+            self._feedback("preview_plan_path", -1, "plan not found", "")
+            return
+        areas = {a.get("id"): a for a in self.site_map.get("areas") or []}
+        paths = []
+        total_m = 0.0
+        for area_id in plan.get("areaIds") or []:
+            outline = [(float(p["x"]), float(p["y"])) for p in areas.get(area_id, {}).get("range") or []]
+            if len(outline) < 3:
+                continue
+            fill, edge = demo.route(outline)
+            for kind, line in ((1, edge), (0, fill)):
+                total_m += sum(math.dist(a, b) for a, b in zip(line, line[1:]))
+                paths.append(
+                    {
+                        "clean_index": 0,
+                        "clean_times": 0,
+                        "id": area_id,
+                        "type": kind,
+                        "path_slope": [],
+                        "path": [{"x": round(x, 3), "y": round(y, 3)} for x, y in line],
+                    }
+                )
+        seconds = round(total_m / 0.4)  # about the robot's mowing speed
+        self._feedback(
+            "preview_plan_path",
+            0,
+            "",
+            {
+                "planId": wanted,
+                "areaIds": list(plan.get("areaIds") or []),
+                "cleanAreaId": -1,
+                "cleanPathProgress": paths,
+                "finishIds": [],
+                "state": 0,
+                "startTime": 0,
+                "duration": 0,
+                "leftTime": float(seconds),
+                "totalTime": float(seconds),
+            },
+        )
 
     def cmd_read_gps_ref(self, value: Any) -> None:
         lat, lon = demo.REFERENCE

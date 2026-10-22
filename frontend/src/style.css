@@ -145,6 +145,10 @@ i.sw.dock { background: #fff; border-radius: 50%; }
 .plans li { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .plans li.showing { border-color: var(--accent); }
 .plans .meta { color: var(--muted); font-size: 12px; }
+.plans .route-status { font-size: 12px; margin-top: 4px; }
+.plans .route-status.computing { color: var(--warn); }
+.plans .route-status.ok { color: var(--ok); }
+.plans .route-status.error { color: var(--danger); }
 
 label.field { display: grid; gap: 3px; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
 label.check { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }

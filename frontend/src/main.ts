@@ -63,6 +63,9 @@ let status: Status | null = null;
 let ops: Op[] = [];
 let plans: Plan[] = [];
 let shownRoute: number | null = null;
+// Per plan: what its route preview is doing, shown in its row.
+const routeStatus = new Map<number, { kind: "computing" | "ok" | "error"; text: string; since: number }>();
+let routeTicker: number | undefined;
 let selectedId: string | null = null;
 let armedApply = false;
 let offsetMetres: [number, number] = loadOffset(imagery);
@@ -976,9 +979,9 @@ async function refreshPlans() {
     ? plans
         .map(
           (p) => `<li data-plan="${p.id}" class="${shownRoute === p.id ? "showing" : ""}">
-            <div><b>${esc(p.name)}</b><div class="meta">${p.area_ids.map((a) => esc(areaName(a))).join(", ")}</div></div>
+            <div><b>${esc(p.name)}</b><div class="meta">${p.area_ids.map((a) => esc(areaName(a))).join(", ")}</div>${routeLine(p.id)}</div>
             <span class="row" style="margin:0">
-              <button data-route="${p.id}" title="Show the route the robot would take">${shownRoute === p.id ? "Hide" : "Route"}</button>
+              <button data-route="${p.id}" title="Show the route the robot would take" ${routeStatus.get(p.id)?.kind === "computing" ? "disabled" : ""}>${routeButton(p.id)}</button>
               <button data-edit="${p.id}">Edit</button>
             </span>
           </li>`,
@@ -993,9 +996,37 @@ async function refreshPlans() {
   );
 }
 
+function routeButton(planId: number): string {
+  if (routeStatus.get(planId)?.kind === "computing") return "Computing…";
+  return shownRoute === planId ? "Hide" : "Route";
+}
+
+function routeLine(planId: number): string {
+  const status = routeStatus.get(planId);
+  if (!status) return "";
+  let text = status.text;
+  if (status.kind === "computing") text += ` (${Math.round((Date.now() - status.since) / 1000)} s)`;
+  return `<div class="route-status ${status.kind}" data-route-status="${planId}">${esc(text)}</div>`;
+}
+
+/** Keep the elapsed time on a computing row ticking without redrawing the list. */
+function tickRouteStatus() {
+  const computing = [...routeStatus].filter(([, s]) => s.kind === "computing");
+  for (const [planId] of computing) {
+    const line = $("plans").querySelector<HTMLElement>(`[data-route-status="${planId}"]`);
+    if (line) line.outerHTML = routeLine(planId);
+  }
+  if (!computing.length) {
+    window.clearInterval(routeTicker);
+    routeTicker = undefined;
+  }
+}
+
 async function toggleRoute(planId: number) {
+  if (routeStatus.get(planId)?.kind === "computing") return;
   if (shownRoute === planId) {
     shownRoute = null;
+    routeStatus.delete(planId);
     (map.getSource("route") as GeoJSONSource).setData(empty);
   } else {
     await showRoute(planId);
@@ -1004,17 +1035,35 @@ async function toggleRoute(planId: number) {
 }
 
 async function showRoute(planId: number) {
+  routeStatus.set(planId, {
+    kind: "computing",
+    text: "The robot is working out the route; a big yard can take a minute or more.",
+    since: Date.now(),
+  });
+  routeTicker ??= window.setInterval(tickRouteStatus, 1000);
+  await refreshPlans();
   try {
     const route = await api.route(planId);
+    if (!route.features.length) {
+      routeStatus.set(planId, { kind: "error", text: "The robot returned no route for this plan.", since: Date.now() });
+      return;
+    }
     const offset = currentOffset();
+    const features = route.features.map((f) => ({ ...f, geometry: shiftGeometry(f.geometry, offset) }));
+    if (shownRoute !== null && shownRoute !== planId) routeStatus.delete(shownRoute);
     shownRoute = planId;
-    (map.getSource("route") as GeoJSONSource).setData({
-      type: "FeatureCollection",
-      features: route.features.map((f) => ({ ...f, geometry: shiftGeometry(f.geometry, offset) })),
+    (map.getSource("route") as GeoJSONSource).setData({ type: "FeatureCollection", features });
+    const box = bounds(features);
+    if (box) map.fitBounds(box, { padding: 80, maxZoom: 21 });
+    const minutes = route.total_s ? `about ${Math.round(route.total_s / 60)} min` : "no time estimate";
+    const passes = new Set(route.features.map((f) => `${f.properties.area_id}`)).size;
+    routeStatus.set(planId, {
+      kind: "ok",
+      text: `Route shown: ${passes} area${passes === 1 ? "" : "s"}, ${minutes}. Dashed blue is the edge lap.`,
+      since: Date.now(),
     });
-    if (route.total_s) say(`Estimated time: ${Math.round(route.total_s / 60)} min.`, "ok");
   } catch (err) {
-    say(`No route: ${message(err)}`, "error");
+    routeStatus.set(planId, { kind: "error", text: `No route: ${message(err)}`, since: Date.now() });
   }
 }
 

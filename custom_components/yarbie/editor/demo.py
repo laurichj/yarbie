@@ -137,3 +137,26 @@ def snapshot() -> dict[str, Any]:
         # An RTK fix, so a plan may start (the session refuses without one).
         "RTKMSG": {"status": "4", "sat_num": 28, "heading": 212.0},
     }
+
+
+def route(area: list[tuple[float, float]], spacing: float = 0.6) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """A plausible route for one area, for the simulator's previews: rows across it,
+    boustrophedon, and one lap of its edge. The robot plans its own; this only has to
+    look like one."""
+    ys = [y for _, y in area]
+    rows: list[tuple[float, float]] = []
+    y = min(ys) + spacing / 2
+    left_to_right = True
+    while y < max(ys):
+        crossings: list[float] = []
+        for (x1, y1), (x2, y2) in zip(area, area[1:] + area[:1], strict=True):
+            if (y1 <= y < y2) or (y2 <= y < y1):
+                crossings.append(x1 + (y - y1) * (x2 - x1) / (y2 - y1))
+        crossings.sort()
+        if len(crossings) >= 2:
+            a, b = crossings[0], crossings[-1]
+            rows += [(a, y), (b, y)] if left_to_right else [(b, y), (a, y)]
+            left_to_right = not left_to_right
+        y += spacing
+    edge = [*area, area[0]]
+    return rows, edge
