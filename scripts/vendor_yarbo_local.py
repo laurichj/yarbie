@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -86,6 +87,17 @@ def main() -> int:
             }
             if current != expected or on_disk != expected["files"]:
                 print("vendored yarbo_local is stale or edited; run scripts/vendor_yarbo_local.py", file=sys.stderr)
+                return 1
+            # Present here is not enough: an ignore rule once kept data/*.yaml out of git,
+            # so every clone but this one lacked the command registry.
+            tracked = subprocess.run(
+                ["git", "ls-files", "--", str(TARGET.relative_to(ROOT))],
+                cwd=ROOT, capture_output=True, text=True, check=True,
+            ).stdout.split()
+            prefix = f"{TARGET.relative_to(ROOT)}/"
+            untracked = sorted(set(expected["files"]) - {t.removeprefix(prefix) for t in tracked})
+            if untracked:
+                print(f"vendored files not in git (check .gitignore): {', '.join(untracked)}", file=sys.stderr)
                 return 1
             return 0
         if TARGET.exists():
