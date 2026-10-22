@@ -12,6 +12,7 @@ from .._vendor.yarbo_local.models import local_to_wgs84
 from .mapdoc import (
     LocalPoint,
     Ref,
+    dock_point,
     feature_key,
     geometry_to_local,
     is_closed_ring,
@@ -98,11 +99,7 @@ def _records(raw: Mapping[str, Any], family: str) -> dict[str, Mapping[str, Any]
 
 
 def _dock_point(raw: Mapping[str, Any]) -> tuple[float, float] | None:
-    for dock in raw.get("allchargingData") or []:
-        point = dock.get("chargingPoint") if isinstance(dock, Mapping) else None
-        if isinstance(point, Mapping):
-            return (float(point["x"]), float(point["y"]))
-    return None
+    return dock_point(raw)
 
 
 def _support(kind: OpKind, family: str) -> tuple[bool, str | None]:

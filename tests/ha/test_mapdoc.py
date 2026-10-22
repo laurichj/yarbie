@@ -135,3 +135,19 @@ def test_crossings_finds_each_crossing() -> None:
     bow_tie = [(0.0, 0.0), (2.0, 2.0), (2.0, 0.0), (0.0, 2.0)]
     assert diff.crossings(bow_tie) == [(1.0, 1.0)]
     assert diff.crossings([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)]) == []
+
+
+def test_only_the_dock_in_use_counts() -> None:
+    """Seen on 3.14.20 after the dock moved: the old one stays in allchargingData with
+    enable false, listed first."""
+    raw = copy.deepcopy(demo.site_map())
+    old = {**raw["allchargingData"][0], "id": 1, "enable": False, "chargingPoint": {"phi": 0.0, "x": 1.714, "y": 0.729}}
+    new = {**raw["allchargingData"][0], "id": 2, "enable": True, "chargingPoint": {"phi": 0.0, "x": 15.088, "y": 5.045}}
+    raw["allchargingData"] = [old, new]
+    raw["chargingData"] = new
+    assert mapdoc.dock_point(raw) == (15.088, 5.045)
+    docks = [f for f in mapdoc.to_feature_collection(raw, demo.REFERENCE)["features"] if f["properties"]["family"] == "dock"]
+    assert [d["properties"]["id"] for d in docks] == [2]
+    # A map with only chargingData still has its dock.
+    del raw["allchargingData"]
+    assert mapdoc.dock_point(raw) == (15.088, 5.045)
