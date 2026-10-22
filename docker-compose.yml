@@ -1,0 +1,10 @@
+services:
+  yarbie:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/data
+    ports:
+      # Loopback only: the server has no login, and it can change the robot's map.
+      - "127.0.0.1:8765:8765"
+    restart: unless-stopped
