@@ -28,7 +28,7 @@ from typing import Any
 
 from .._vendor.yarbo_local.models import local_to_wgs84
 
-from .mapdoc import local_points, site_reference
+from .mapdoc import dock_point, local_points, site_reference
 
 CELL_M = 1.0
 BORDER_M = 1.0  # width of the band a perimeter lap or a row end wears
@@ -332,11 +332,7 @@ def _open(ring: list[Pt]) -> list[Pt]:
 
 
 def _dock(raw: Mapping[str, Any]) -> Pt | None:
-    for dock in raw.get("allchargingData") or []:
-        point = dock.get("chargingPoint") if isinstance(dock, Mapping) else None
-        if isinstance(point, Mapping):
-            return (float(point["x"]), float(point["y"]))
-    return None
+    return dock_point(raw)
 
 
 def _inside(p: Pt, ring: Sequence[Pt]) -> bool:

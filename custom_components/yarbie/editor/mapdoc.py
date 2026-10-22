@@ -68,6 +68,31 @@ def site_reference(raw: Mapping[str, Any], fallback: Ref | None = None) -> Ref |
     return fallback
 
 
+def docks(raw: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The charging points in use. ``allchargingData`` keeps every dock the robot ever
+    had, old ones with ``enable`` false (seen on 3.14.20 after the dock was moved), so
+    only enabled ones count. ``chargingData`` (the current one) covers maps without it."""
+    found = [
+        d for d in raw.get("allchargingData") or []
+        if isinstance(d, Mapping) and isinstance(d.get("chargingPoint"), Mapping)
+    ]
+    enabled = [d for d in found if d.get("enable", True) is not False]
+    if enabled:
+        return enabled
+    current = raw.get("chargingData")
+    if isinstance(current, Mapping) and isinstance(current.get("chargingPoint"), Mapping):
+        return [current]
+    return []
+
+
+def dock_point(raw: Mapping[str, Any]) -> tuple[float, float] | None:
+    """Where the robot docks, in map metres; the first dock in use."""
+    for dock in docks(raw):
+        point = dock["chargingPoint"]
+        return (float(point["x"]), float(point["y"]))
+    return None
+
+
 def _lonlat(ref: Ref, x: float, y: float) -> list[float]:
     lat, lon = local_to_wgs84(ref, x, y)
     return [round(lon, 9), round(lat, 9)]
@@ -117,12 +142,8 @@ def to_feature_collection(raw: Mapping[str, Any], reference: Ref | None) -> dict
                 }
             )
     if site_ref is not None:
-        for dock in raw.get("allchargingData") or []:
-            if not isinstance(dock, Mapping):
-                continue
-            point = dock.get("chargingPoint")
-            if not isinstance(point, Mapping):
-                continue
+        for dock in docks(raw):
+            point = dock["chargingPoint"]
             features.append(
                 {
                     "type": "Feature",

@@ -10,7 +10,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 from xml.sax.saxutils import escape
 
-from .mapdoc import FAMILIES, POLYGON_FAMILIES, local_points
+from .mapdoc import FAMILIES, POLYGON_FAMILIES, docks, local_points
 
 STYLE = {
     "areas": ('fill="#c8e6c9" stroke="#43a047"', 0.25),
@@ -64,13 +64,12 @@ def svg(
                 f'<polyline points="{_path(line)}" fill="none" stroke="#1b5e20" '
                 'stroke-width="0.25" opacity="0.8"/>'
             )
-    for dock in raw.get("allchargingData") or []:
-        point = dock.get("chargingPoint") if isinstance(dock, Mapping) else None
-        if isinstance(point, Mapping):
-            px, py = _xy(float(point["x"]), float(point["y"]))
-            xs.append(px)
-            ys.append(py)
-            shapes.append(f'<rect x="{px - 0.5:.2f}" y="{py - 0.5:.2f}" width="1" height="1" rx="0.2" fill="#455a64"/>')
+    for dock in docks(raw):
+        point = dock["chargingPoint"]
+        px, py = _xy(float(point["x"]), float(point["y"]))
+        xs.append(px)
+        ys.append(py)
+        shapes.append(f'<rect x="{px - 0.5:.2f}" y="{py - 0.5:.2f}" width="1" height="1" rx="0.2" fill="#455a64"/>')
     if robot is not None:
         px, py = _xy(robot[0], robot[1])
         shapes.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="0.6" fill="#0288d1" stroke="#fff" stroke-width="0.2"/>')

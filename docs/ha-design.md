@@ -443,6 +443,60 @@ a Pro.
   once-per-run sensors per area ("Back lawn load vs median") for automations such as
   mowing an area early.
 
+### 3. Move plan editing out of the map editor
+
+Plans are a robot setting, not map geometry: which areas, in what order. Today they are
+edited in the Yard editor's Plans section. Move editing to where the robot's other
+controls live, and keep only what needs the map in the editor (route preview, picking
+areas by clicking them).
+
+**Where it goes:**
+- **A plan card on the Yarbo dashboard** (the strategy): the plans with their areas,
+  New, Edit (name and areas as a checklist, then the order), Delete with a confirm, and
+  Start.
+- **The device page**, as far as HA allows: the plan select stays. Add a "Manage plans"
+  link to the dashboard card, because the device page cannot host a custom editor.
+
+**How:**
+- **A custom Lovelace card** (`custom:yarbie-plans-card`), served beside the dashboard
+  strategy and placed in its first column. It uses the existing `yarbie/plans/*`
+  commands, so the backend does not change.
+- Writes keep the same rails: the write lock, the busy check, the kill switch, untested
+  firmware.
+- The Yard editor's Plans section shrinks to a list with **Route** and **Edit on the
+  dashboard**. When a plan's route is shown, its areas are highlighted on the map.
+- **Optional:** with the editor open, clicking areas on the map adds them to the plan
+  being edited, which the card would offer as "Pick on the map".
+
+### 4. Schedule editor
+
+yarbo-local has verified `read_schedules`, `save_schedule` and `del_schedule`. But only a
+*disabled* schedule has ever been stored on a real robot. What `schedule_type`,
+`week_day` (a single day or a bitmask?) and `return_method` mean when a schedule fires is
+not known. The app sent 3, 1 and 2.
+
+**Step 1: learn the fields.**
+- In the Yarbo app, make a few enabled schedules: one weekday; several days; different
+  "return" choices; "resume from last progress" on and off.
+- Capture each with `yarbo-local sniff`.
+- Let one fire, and record what the robot did and what `plan_feedback` and the run
+  history show.
+- Add what was learnt to the fork's `protocol/` (commands and codes), then pull it in.
+
+**Then build:**
+- **Entities:**
+  - A `calendar` entity showing upcoming scheduled runs, so they appear in HA's
+    calendar and automations can see them.
+  - A `switch` per schedule to enable or disable it.
+- **A schedule card** on the Yarbo dashboard: list, add, edit (plan, days, start and end
+  time, return method, resume progress), enable/disable, delete. It sits next to the
+  plan card from TODO 3.
+- **Websocket commands** `yarbie/schedules/list|save|delete`, under the same write rails.
+- **Run history:** a run started by a schedule says so ("started by schedule
+  <name>"). The run log can match the start against the schedule's time.
+- **Rain:** whether to skip a scheduled run when it is raining, as an option, which needs
+  the rain-pause blueprint's logic at start time.
+
 ## Appendix: delta against markus-lassfolk's integration (mower only)
 
 - **Same:**
