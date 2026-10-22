@@ -57,12 +57,12 @@
   },
   "issues": {
     "untested_firmware": {
-      "title": "Yarbo firmware {firmware} not yet tested",
+      "title": "Yarbo firmware {firmware} not yet tested with yarbie",
       "fix_flow": {
         "step": {
           "confirm": {
             "title": "Turn writes on for firmware {firmware}?",
-            "description": "yarbie's command list was verified on another firmware. Map, plan and settings writes are off until you confirm; controls still work.\n\nBefore confirming: draw a small no-go zone in the Yard editor, send it, and check the Yarbo app shows it and can edit and delete it."
+            "description": "yarbie's command list was verified on firmware {tested}; the robot now reports {firmware}. Map, plan and settings writes are off until you confirm; controls still work.\n\nAfter confirming, check it once: draw a small no-go zone in the Yard editor, send it, and check the Yarbo app shows it and can edit and delete it. Then delete it from the editor. If anything looks wrong, turn \"Allow map writes\" off in the yarbie options and report the firmware."
           }
         }
       }

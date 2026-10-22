@@ -13,9 +13,10 @@ from .const import CONF_ACCEPTED_FIRMWARE
 
 
 class AcceptFirmwareFlow(RepairsFlow):
-    def __init__(self, entry_id: str, firmware: str) -> None:
+    def __init__(self, entry_id: str, firmware: str, tested: str) -> None:
         self._entry_id = entry_id
         self._firmware = firmware
+        self._tested = tested
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> RepairsFlowResult:
         return await self.async_step_confirm()
@@ -32,7 +33,7 @@ class AcceptFirmwareFlow(RepairsFlow):
         return self.async_show_form(
             step_id="confirm",
             data_schema=probatio.Schema({}),
-            description_placeholders={"firmware": self._firmware},
+            description_placeholders={"firmware": self._firmware, "tested": self._tested},
         )
 
 
@@ -40,4 +41,4 @@ async def async_create_fix_flow(
     hass: HomeAssistant, issue_id: str, data: dict[str, Any] | None
 ) -> RepairsFlow:
     assert data is not None
-    return AcceptFirmwareFlow(str(data["entry_id"]), str(data["firmware"]))
+    return AcceptFirmwareFlow(str(data["entry_id"]), str(data["firmware"]), str(data.get("tested", "")))
