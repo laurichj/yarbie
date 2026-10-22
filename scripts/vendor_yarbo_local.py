@@ -53,7 +53,7 @@ def build(dest: Path) -> dict[str, object]:
     pyproject = (UPSTREAM / "pyproject.toml").read_text(encoding="utf-8")
     version = re.search(r'^version = "([^"]+)"', pyproject, re.M)
     manifest = {
-        "upstream": "https://github.com/yarbo-local/yarbo-local",
+        "upstream": "https://github.com/laurichj/yarbo-local",
         "version": version.group(1) if version else None,
         "files": {
             str(p.relative_to(dest)): hashlib.sha256(p.read_bytes()).hexdigest()

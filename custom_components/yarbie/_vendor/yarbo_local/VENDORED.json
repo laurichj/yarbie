@@ -1,5 +1,5 @@
 {
-  "upstream": "https://github.com/yarbo-local/yarbo-local",
+  "upstream": "https://github.com/laurichj/yarbo-local",
   "version": "0.1.0.dev3",
   "files": {
     "__init__.py": "f07764940936d16b2f196c02af1afbc6eea204c5e684846d1d42c7639f204e9b",
