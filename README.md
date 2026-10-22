@@ -1,0 +1,139 @@
+# yarbo-local
+
+Local-first tooling and, later, the asyncio library behind a Home Assistant integration for Yarbo robots. It talks to the anonymous MQTT broker the robot runs on your LAN and to nothing else. No Yarbo account, no vendor servers, no telemetry.
+
+Status: **pre-alpha.** Phase 0 validated the protocol on real hardware (firmware 3.14.11) and produced the knowledge base in `protocol/`: 57 commands verified with captures, the rest marked as candidates that cannot be sent. The library core is in place: a registry-gated session, typed state, the map, plan control (start, pause, resume, stop, return to dock), the map and its objects, plans and schedules, and the robot's settings, each verified against the robot, a fixture-driven simulator and a small client. It is on PyPI as `yarbo-local`. The Home Assistant integration ([yarbo-local-ha](https://github.com/yarbo-local/yarbo-local-ha)) shows and controls the robot, and carries its own map card, which draws the map, the robot and plan progress.
+
+## What is here
+
+| Path | Purpose |
+|---|---|
+| `src/yarbo_local/client.py` | `YarboRobot`: connect, read typed state, and run the verified reads. |
+| `src/yarbo_local/session.py` | The protocol layer: reconnect, reply correlation, encoding choice, wake and controller rules. |
+| `src/yarbo_local/registry.py` | The command allowlist loaded from `protocol/commands.yaml`. Forbidden names cannot be sent. |
+| `src/yarbo_local/models.py` | `RobotState` and the map, plan and GNSS parsers. No I/O. |
+| `src/yarbo_local/transport.py` | aiomqtt transport plus an in-memory fake for tests. |
+| `src/yarbo_local/simulator.py` | A robot built from fixtures, for tests and for developing without hardware. |
+| `src/yarbo_local/resolve.py` | Address resolution: last address, DNS name, subnet scan. |
+| `src/yarbo_local/fieldmap.py` | Builds `protocol/fields.yaml` from the curated seed and the fixtures. |
+| `src/yarbo_local/studio/` | The Studio: aiohttp server and Lit UI (`docs/studio.md`). |
+| `src/yarbo_local/codec.py` | zlib-or-plain JSON codec with the firmware rule and an observed-encoding fallback. |
+| `src/yarbo_local/capture.py` | `sniff`: subscribe to `snowbot/+/#` and write every message to JSONL, optionally redacted. |
+| `src/yarbo_local/probe.py` | `probe`: send one allowlisted command, show the correlated reply and the telemetry deltas. |
+| `src/yarbo_local/discover.py` | `discover`: find brokers carrying `snowbot` traffic, identified by the serial in their topics. |
+| `src/yarbo_local/dump.py` | `dump`: summarise a capture, including the full `DeviceMSG` key inventory. |
+| `src/yarbo_local/sitecheck.py` | `sitecheck`: check a site with one or several robots, reads only, and write a report that is safe to share (`docs/multi-robot.md`). |
+| `src/yarbo_local/redact.py` | Serial, MAC, IP, coordinate and Wi-Fi redaction for shareable fixtures. |
+| `protocol/` | The knowledge base: `commands.yaml`, `fields.yaml`, `codes.yaml`, `fixtures/`. |
+| `docs/phase0.md` | The twelve questions Phase 0 answers, with the exact commands. |
+
+## Quick start
+
+```bash
+git clone https://github.com/yarbo-local/yarbo-local
+cd yarbo-local
+uv sync --extra dev
+uv run yarbo-local discover 192.168.40.0/24
+uv run yarbo-local sniff 192.168.40.23 --out captures/idle.jsonl
+uv run yarbo-local dump captures/idle.jsonl --keys --app
+uv run yarbo-local probe 192.168.40.23 get_device_msg
+```
+
+`probe` only sends commands on a short allowlist of reads plus the wake-up command. It will not send anything that moves the robot, changes the map, or touches settings.
+
+## Using the library
+
+```python
+import asyncio
+from yarbo_local import YarboRobot
+
+
+async def main() -> None:
+    async with YarboRobot.for_host("192.168.50.184") as robot:
+        state = await robot.snapshot()
+        print(state.activity, state.battery, state.head_name)
+        for plan in await robot.plans():
+            print(plan.id, plan.name)
+        robot.on_state(lambda s: print("changed:", s.activity))
+        await asyncio.sleep(30)
+
+
+asyncio.run(main())
+```
+
+Changing things is typed too. Each of these was sent to a real robot and read back:
+
+```python
+async with YarboRobot.for_host("192.168.50.184") as robot:
+    await robot.start_plan(1)  # the app's sequence; waits for the robot's verdict
+    await robot.pause()
+    await robot.resume()
+    await robot.stop()
+    await robot.dock()
+
+    route = await robot.preview_route(1)  # the route for a plan, without moving the robot
+    plan_id = await robot.save_plan("Front and back", [4, 9])
+    await robot.save_schedule(
+        plan_id=plan_id, name="Monday", week_day=1, start_time="10:00:00", end_time="12:00:00"
+    )
+    await robot.update_mower_area_params(4, first_clean_params={"blade_height": 60})
+    await robot.update_global_params(recharge_battery=25)
+    await robot.set_sound(enabled=True, volume=0.5)
+
+    site = await robot.site_map()  # zones in metres from their reference
+    area = site.areas[0]
+    zone = await robot.save_nogozone("Flower bed", [(1, 1), (3, 1), (3, 3)], area.ref)
+    await robot.delete_nogozone(zone["id"])
+```
+
+`robot.state` also says what the robot does not: `state.waiting` is a plan that reports itself running while the robot has stood still for a minute (a blocked pathway looks like this, with no error and no pause code), and `state.stop_button_engaged` is the physical stop button.
+
+Rules the session enforces, on purpose:
+
+- Only commands in `protocol/commands.yaml` can be sent. Names in its `forbidden` section are not entries and can never be sent, with or without flags.
+- A command whose status is `candidate` is refused unless the session was opened with `allow_candidates=True`. The Home Assistant integration never does that; the Studio does.
+- A command with `risk: confirm` needs `confirmed=True` on the call.
+- The wake command and the controller role are used only when the command's flags say they are needed.
+- Taking the controller pauses a running plan, so a command that needs it is refused while a plan runs (`PlanRunningError`) unless the call passes `may_pause_plan=True`. Starting, pausing, resuming and stopping a plan never take it.
+- Outbound encoding follows the robot's firmware, or what it has been seen sending, so a robot on 3.9 or later never silently drops a plaintext command.
+- The connection loop never returns on a dropped broker; it backs off with jitter and reconnects.
+
+The same CLI can show what the library sees, stand up a fake robot from a fixture for development without hardware, and open the Studio, a local web UI for watching the protocol, documenting fields and saving fixtures (see `docs/studio.md`):
+
+```bash
+uv run yarbo-local status yarbo.localdomain --watch 30
+uv run yarbo-local sim protocol/fixtures/3.14.11/get_device_msg-asleep.jsonl --broker 127.0.0.1
+uv run yarbo-local studio yarbo.localdomain
+```
+
+## Can't see the base station in your router or controller?
+
+You won't. The base station bridges the rover's HaLow link onto your LAN behind a locally administered MAC that never associates with an access point or asks your DHCP server for an address. It picks a static address for itself, inside your DHCP pool, and it has no management page. Network controllers such as UniFi list clients by association or wired port, so the base station simply does not exist to them, even while it answers on ports 1883, 8883 and 22.
+
+Do not spend an afternoon on this. Scan the subnet instead:
+
+```bash
+uv run yarbo-local discover 192.168.1.0/24 --wait 8
+```
+
+Every host carrying Yarbo traffic is listed with the serial it carries and its DNS name, if it has one. A robot is identified by its own topics and nothing else; the tool reads no ARP table and runs no other program. The rover and the base station both answer, with the same data. Then protect yourself from the address collision Yarbo set up for you: either shrink your DHCP pool so it starts above the base station's address, or put the Yarbo Wi-Fi association on an isolated VLAN so the whole bridge moves out of your main network.
+
+## Safety and privacy
+
+The robot's broker has no authentication. Anyone on its network segment can drive it. Put the robot on its own VLAN, allow only the machine running this tooling (and later Home Assistant) to reach port 1883, and think deliberately about whether the robot should have internet access at all. Captures contain your serial number, coordinates and network details; use `--redact` and review the file before sharing it.
+
+## Have more than one robot?
+
+Nobody on the project does. One command tells us what we cannot find out ourselves, without sharing a serial, an address or a position: see [docs/multi-robot.md](docs/multi-robot.md).
+
+## Contributing protocol knowledge
+
+Read `protocol/README.md`. A command becomes `verified` only with a fixture showing the request and the reply on real hardware, with the firmware version recorded. Pull requests that add knowledge without evidence are asked for a capture.
+
+## Releasing
+
+Releases are published to PyPI by GitHub Actions through trusted publishing, with a manual approval and no token anywhere. See `docs/releasing.md`.
+
+## License and trademark
+
+MIT. Protocol facts were assembled from the vendor's MIT-licensed SDK, from `python-yarbo`, `home-assistant-yarbo`, the `jtubb` and `briangann` forks of the vendor integration, and the `steves2j` map editor; see `protocol/commands.yaml` for per-entry sources. Yarbo is a trademark of its owner. This project is not affiliated with, endorsed by, or supported by Yarbo.

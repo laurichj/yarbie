@@ -1,0 +1,232 @@
+# Phase 0 findings
+
+Robot: one Yarbo body, no head attached, firmware 3.14.11, base station firmware 1.1.11, body MCU 3.2.26, chassis 2.1.40. Free-standing in the garage, off any charger, about 14.5 m from the mapped dock point. Earlier revisions of this file said "docked on the wired charger"; that was a misreading of `BodyMsg.recharge_state`, see section 13. Phone app closed throughout. All captures are redacted fixtures under `protocol/fixtures/3.14.11/`.
+
+Numbering follows `phase0.md`.
+
+## 1. Broker inventory
+
+Two hosts answer on 1883 and 8883, both carry the same serial's traffic, both currently resolve to one locally administered MAC. The rover reports HaLow connected to the base station's SSID at -43 dBm with the HaLow route preferred (`route_priority` hg0 10, wlan0 600, wwan0 -1, no LTE). Earlier the rover's IP resolved to a different, globally administered MAC. Reading: the base station proxies the rover's IP while the rover is on HaLow, and the base station has its own IP as well. Both endpoints return the same snapshot with 52 ms and 62 ms latency. Which one runs the broker and which bridges is not yet distinguishable. The base station is reachable from the LAN on this site.
+
+The `discover` scanner had a real bug: `asyncio.open_connection` resolves even IP literals through the default thread pool, so a /24 with dozens of concurrent probes timed out before connecting. Fixed with a raw non-blocking `sock_connect`.
+
+## 2. Wake-up
+
+`set_working_state {"state": 1, "source": "smart_home"}` works on the LAN. No acknowledgement on `data_feedback`. Within seconds `DeviceMSG` starts streaming and `heart_beat.working_state` flips to 1. No `get_controller` was needed. The robot puts itself back to sleep about 200 s after the last stimulus, so an unrenewed wake lasts roughly four and a half minutes. That is the reason the vendor integration renews every four minutes. Reads do not keep it awake. After a single wake with the app closed and the robot parked off the charger, `get_device_msg` was sent every 60 s. The heartbeat flipped back to 0 at t+301 s, one second after the fifth read, and `DeviceMSG` held 1 Hz until then (299 frames). A read that reset the sleep timer would have kept it awake past 440 s, so reads do not reset it. The window closed at 301 s rather than the roughly 200 s seen without reads, so either the window varies or there is a limit near 300 s from the wake itself. Reads kept answering after it slept. The consequence for the integration: continuous telemetry needs `set_working_state` re-sent before the window closes, and the vendor's four-minute renewal sits inside the measured window with little margin. Renewing does work: with `set_working_state` re-sent every 150 s after the first wake, the robot stayed awake for the whole 11-minute run (657 `DeviceMSG` frames at 1 Hz, still awake at the end). So the window is measured from the last wake command, not from the first, and reads do not count as a wake. A keep-awake that renews at 150 s has about a factor of two of margin.
+
+## 3. Cadence
+
+| State | `heart_beat` | `DeviceMSG` |
+|---|---|---|
+| asleep | every 5 s, `{"working_state": 0}` | none |
+| awake, parked, no app | every 2 s, `{"working_state": 1}` | 1.00 Hz, zlib, about 1 KB |
+
+The claim that `DeviceMSG` only streams while the phone app is connected is false on this firmware. It streams whenever the robot is awake.
+
+## 4. Compression
+
+`DeviceMSG.version` is `3.14.11`. Every device topic except `heart_beat` is zlib. Commands sent as zlib were accepted. The 3.9.0 rule holds.
+
+## 5. Snapshot without the app
+
+`get_device_msg` answers while asleep, 52 ms, state 0, `msg` "Device messages retrieved successfully.", with 52 top-level objects and 422 flattened paths. The push `DeviceMSG` has 29 top-level objects. Objects present only in the snapshot include `LedInfoMSG`, `HubInfoMSG`, `NetMSG`, `DebugMsg`, `system_info`, `camera_state`, `SoftwareUpdate`, `net_module_status`, `halow_status`, `route_priority`, `rtcm_*`, `hardware_version`, `chassis_version_msg`, `dc_version`, `base_name`, `min_app_version`.
+
+Read-back exists in `StateMSG` for `person_detect_status`, `child_lock_status`, `enable_sound`, `volume` (float 0 to 1), `robot_follow_state`, `machine_controller`, `en_state_led`, `en_warn_led`, `lidar_switch`, `obstacle_toggle`, `sentry_mode_status`, `shipping_mode`. `LedInfoMSG` carries every LED channel including RGB and dimmer values per lamp. Assumed-state switches are unnecessary for all of these.
+
+## 6. Map
+
+`get_map {"width": 256, "height": 256}` answers asleep in 43 ms. On 3.14.11 the `data` field is a base64 string of zlib-compressed JSON, so that envelope is current, not legacy. Decoded keys: `allchargingData`, `chargingData`, `areas`, `nogozones`, `novisionzones`, `elec_fence`, `pathways`, `sidewalks`, `deadends`, `mul_points`. This site has no areas mapped yet; only the dock is present. Dock record: `chargingPoint {x, y, phi}`, `startPoint {x, y, phi}`, `straightPhi` in radians, `hasChargingStation`, `enable`, `id`, `name`. `get_all_map_backup` uses the same base64 zlib envelope.
+
+## 7. Plans
+
+`read_all_plan` answers asleep in 44 ms with `{"data": []}`. The claim that it goes unanswered when idle is false on this firmware. `read_schedules` returns a bare list, `read_all_clean_area`, `read_all_pathway`, `read_all_sidewalk`, `read_all_nogozone` return `{"data": []}`. Both reply shapes are real. `get_plan_feedback` with no plan running replies on `data_feedback` with state -1 and `msg` "no plan working", not on `plan_feedback`.
+
+`read_global_params` needs `{"id": 1}`. With `{}` it replies state -2 "An error occurred while reading global parameters." With the id it returns about 60 settings including blade and blower battery cut-offs, `plan_speed`, `max_vel`, `enable_elec_fence`, `enable_weather_schedule`, chute angle limits, `default_plan_id`, and rain thresholds.
+
+`read_recharge_point` answers asleep with the dock record. `read_gps_ref` answers asleep with `ref.latitude`, `ref.longitude`, `hgt`, `rtkFixType` 1 and a `lat_lon_hight` string. `get_state_msg` returns `{"value": [33 ints]}`, a bit array with unknown semantics.
+
+## 8. Write acknowledgement
+
+Answered in section 14: the app's saves are acknowledged on `data_feedback` with state 0.
+
+Not tested. Needs the phone app to create a throwaway zone while sniffing.
+
+## 9. Controller theft
+
+Taking the role works: on 2026-09-15 `get_controller {}` answered on `data_feedback` in about 40 ms with state 0 and "Successfully connected to the physical controller." (fixture `get_controller.jsonl`), and `cmd_recharge` was accepted straight after. What the robot publishes when the app takes the role back is still not tested. `StateMSG.machine_controller` read 1 with no app connected, and 1 before and after we took the role, so it does not identify the holder.
+
+## 10. Base station relay
+
+See 1. The relay is reachable and answers every command tried. The earlier belief that it was unreachable from the LAN is not what this site shows today.
+
+Topology as observed with the network controller (UniFi) alongside ARP:
+
+- The controller knows one Yarbo client: the physical Wi-Fi radio, hostname `YARBO`, associated to a 5 GHz AP, holding the DHCP lease for the rover's address.
+- The base station's address is never leased. It is self-assigned inside the LAN's DHCP pool and is reachable only behind a locally administered bridge MAC that never associates with anything. The controller therefore has no record of it at all.
+- ARP for the rover's address alternates between the physical radio MAC and the bridge MAC depending on which path answers first. The base station's address only ever answers from the bridge MAC. The base station's heartbeat also arrives faster.
+- Both hosts present identical Ubuntu SSH banners and identical broker contents.
+
+**Defect, not a design choice to accept.** A device that takes a static address inside the network's DHCP pool without asking, and appears only behind a bridge MAC that no controller can attribute, is a bad network citizen. It will collide with a lease sooner or later, it cannot be reserved, renamed or firewalled by MAC in the controller, and it has no management page to configure otherwise. The integration must discover the relay by probing the subnet, never by asking the controller, and the README must tell users to exclude the base station's address from their DHCP pool or move the whole Yarbo association to an isolated VLAN.
+
+## 10b. Living on a VLAN
+
+After moving the rover to an isolated VLAN with the host running the tooling on a different one:
+
+- Reads and the wake-up work across the firewall exactly as on the flat LAN, 34 ms for a snapshot.
+- Home Assistant's built-in discovery cannot fire: `dhcp` and `zeroconf` listen on HA's own segment, and the robot's DHCP happens on the other VLAN. The robot also advertises nothing over mDNS. Active subnet scanning is the only discovery that works on a segmented network, so it is the primary path in the design, not a fallback.
+- The gateway registers the robot's DHCP hostname in local DNS, so `yarbo.localdomain` resolved to the new address the moment the lease moved. A DNS name is a better anchor than a reservation for a single robot. The hostname is a fixed firmware string, so two robots would collide on it.
+- The base station kept its Default-LAN address, because its Ethernet enters through an access point port that cannot be assigned a VLAN. It never DHCPs, so it also has no DNS name. Until it is cabled to a switch port, it continues to relay the rover's full telemetry on the old network, and the isolation covers the rover's own radio only.
+
+Resolution order the library should use when a connection drops: last known address, then configured DNS name, then subnet scan for the entry's serial.
+
+## 11. Frame conventions
+
+Not yet measured. Data points so far: `CombinedOdom` gives x 14.25, y 2.94, phi -0.20 while parked in the garage; the dock's `chargingPoint` is near the origin, so the robot sits about 14.5 m from it, and the dock's `straightPhi` of 2.91 says `phi` is radians. RTK heading in `RTKMSG.heading` is degrees. `RTKMSG.status` was `"1"` asleep and `"5"` awake, both strings.
+
+## 12. Broker behaviour
+
+The broker echoes app-side publishes to other subscribers: every probe saw its own command come back on `snowbot/{sn}/app/<cmd>`. That means the phone app's commands are observable, which the Studio's app-observer pane depends on.
+
+- **TLS on 8883 works, anonymously.** The certificate is EMQX's stock sample: subject `C=CN, ST=hangzhou, O=EMQ, CN=Server`, issuer `EMQ RootCA`, valid 2020 to 2030, self-signed, TLS 1.3 with AES-256-GCM. It encrypts the hop but authenticates nothing, and every robot almost certainly presents the same certificate. The library can offer "encrypt only" on 8883 with verification off; it must not pretend that is authentication.
+- **Retained messages:** the robot publishes nothing retained, so a fresh subscriber learns nothing until the next heartbeat. The broker itself honours retained publishes on other topics.
+- **Last will:** the broker delivers a will after an abrupt disconnect. Useful for our own client's presence, useless for the robot's, which stays heartbeat-based.
+- **Firmware version:** the broker is EMQX; the rover's snapshot shows `beam.smp` among top processes, consistent with an Erlang EMQX running on the robot itself.
+
+## 13. Charging fields
+
+The robot spent the whole of Phase 0 free-standing in the garage, off any charger, and the battery went from 100% to 71% over an evening with about 25 minutes awake in total. Throughout, `BodyMsg.recharge_state` read 3, which the community code maps to "wired charging (locked)" and uses to block plan start. That mapping is wrong on 3.14.11. The fields that agreed with reality were `BatteryMSG.status` 1 (vendor rule: above 1 means charging), `StateMSG.charging_status` 0, `wireless_recharge.state` 0, and `BatteryMSG.current` -300 mA, which is the pack discharging at rest. The library's `charging` now comes from `BatteryMSG.status` and `StateMSG.charging_status` only, and nothing is derived from `recharge_state`. Neither rule has been seen in the positive direction yet.
+
+On 2026-09-14 the robot was back on the dock: odometry read x -0.00, y -0.18, on top of the dock's `chargingPoint` at -0.05, -0.21. Battery 100%, `BatteryMSG.status` 1, `StateMSG.charging_status` 0, `wireless_recharge.state` 0, `BatteryMSG.current` -300 to -400 mA, and `BodyMsg.recharge_state` **0**, against 3 off the dock. `wireless_recharge.output_voltage` read 10 on the dock and 15 off it. A full battery drawing 0.3 A from itself is consistent with a charger that has stopped at 100%, so this still does not show a charging value; it does show that `recharge_state` changes with docking, in the opposite direction to the community mapping. Fixture: `docked-awake-75s.jsonl`. A capture on the dock below 100% is what settles the charging rule.
+
+Settled on 2026-09-15 at 19:44, docking at 17%: `BatteryMSG.status` 3, `StateMSG.charging_status` 2 (it passed through 1 for a few seconds first), `BatteryMSG.current` **+14.3 A**, so current is positive while charging. The library's rule (`status` above 1 or `charging_status` set) fires correctly. Charging began about 95 s after the robot reached the dock; `on_going_recharging` had already gone 1, then 3, then back to 0, so the return code returning to 0 does not mean charging failed. Waiting for `charging` is the right test, not the recharging code.
+
+## 14. Mapping through the app, and the map frame
+
+On 2026-09-14 the driveway was mapped with the phone app while a passive capture ran on the rover's broker. Every app command and every reply passed through that broker, so the app observer idea works on this firmware without touching Yarbo's servers. Fixtures: `mapping-area-app.jsonl` (trimmed, redacted), `get_map-area-pathway.jsonl`, `area-params.jsonl`.
+
+What the app sent, in order: `set_working_state` every 10 s for the whole session as its keep-awake; `cmd_vel` at about 5 Hz while driving by joystick (forbidden for this project); `cmd_roller` twice; `start_draw_cmd`; paired `set_auto_mapping_state {state, dir}`; `set_combined_odom_path_state {state, type}` to start and stop trail recording, during which the robot publishes `device/combined_odom_path` at 1 Hz; then `save_clean_area` without an id, `save_scan`, `read_area_params`, `save_area_params`, `save_clean_area` again with id 1 and `labels: [1]`, `read_all_clean_area`; and finally `save_pathway`, `read_pathway_params`, `save_pathway_params`. No `get_controller` was sent during the session. `start_draw_cmd`, `set_combined_odom_path_state` and `set_auto_mapping_state` stay on the forbidden motion list; mapping is something a person does with the app. `save_scan` is not registered because its purpose is unknown. Every save answered on `data_feedback` with state 0, which answers question 8: writes are acknowledged there like reads.
+
+The robot stored an area "Area 1" (id 1, 25 vertices, 126.4 m2, stored `area` field) and a line "Pathway 1" (id 2, 5 vertices, 16.9 m, `start_id` 1, `end_id` 0). The app's default names were kept. `push_snow_dir` and `slope_degrees` of 9999.0 mean unset. `humps.ref` carries uninitialised denormal floats such as 5e-324. No plans exist yet.
+
+**Map frame.** Zone `range` points are metres in a local frame whose origin is the zone's `ref` latitude and longitude, with **x pointing west and y pointing north**. Fitting 1,152 RTK-fixed samples of `CombinedOdom` against the rover's GGA fix from the same drive gives an RMS difference of 0.20 m, maximum 0.27 m, which is the antenna offset. The steves2j map card uses the same convention independently (`lon = ref_lon - x / m_per_deg_lon`). A first fit that allowed only rotation and scale failed badly, because a mirrored axis cannot be expressed that way. `CombinedOdom.phi` and vertex `phi` are radians measured from +x towards +y; in 339 of 345 moving steps the robot travelled along `phi`, and the other 6 were reversing.
+
+**Redaction consequence.** The redactor shifts latitude and longitude by whole-degree offsets. Differences in latitude survive in metres, but metres per degree of longitude depend on the true latitude, so east-west distances computed from a redacted fixture are wrong by that factor. Tests on redacted fixtures check signs and the north axis only.
+
+## 15. First plans with the Lawn Mower Pro
+
+On 2026-09-14 and 15 the robot ran "east lawn plan" (area 4, 512 m2) and "west lawn plan" (area 9, 950 m2) with a Lawn Mower Pro head (`HeadMsg.head_type` 5, head firmware 2.2.4). Captures stay local; a centimetre-rounded plan and obstacle sample is in the integration's test fixtures.
+
+**Blades.** `mower_head_info03` (left) and `mower_head_info04` (right) report `*_blade_motor_rpm` of about -2800 and +2800 (the left disc turns the other way), `*_blade_motor_speed` 80 (percent), `*_blade_motor_current` 70 to 131 varying with load, and `*_blade_motor_temp` 73 to 76 slowly rising. The user confirmed the head was cutting at the time. `mower_head_info02` (middle) reads zero in every field, commanded speed included; on this head it appears unused. `mower_head_info01.lift_motor_place` read 0 throughout; its scale is unknown.
+
+**plan_feedback** arrives at 2 Hz while a plan runs: `{planId, areaIds, cleanAreaId, finishIds, actualCleanArea, finishCleanArea, totalCleanArea, duration, leftTime, totalTime, startTime, battery_consumption, runningState, state, cleanPathProgress}`. `cleanPathProgress` holds one entry per path of the area, `{id, type, clean_index, clean_times, path: [{x, y}], path_slope}`; the west lawn had a 129-point path of type 0 and an 82-point path of type 1, and `clean_index` advanced from 37 to 39 over 150 s on the first. `get_plan_feedback` answers state 0 with the same keys while a plan runs.
+
+**cloud_points_feedback** also arrives at 2 Hz: `{rotate_rad, tmp_barrier_points}`, where `tmp_barrier_points` is a list of clusters, each a list of `{x, y}` in the map frame. During 70 s of the East Lawn run every message carried 22 to 43 clusters, which merge into 18 distinct obstacles up to 29 m apart, so the robot keeps a run-wide list rather than only what is near it. During the West Lawn run the list was empty for a 150 s window and for every message after that until at least 1 h into the run, although the user saw the robot avoid obstacles; either that avoidance does not add to this list or the list is dropped, and which one is not known. The integration merges clusters closer than 0.35 m and clears them when a new run starts. An earlier revision of this section said the robot empties the list within seconds; the East Lawn data contradicts that.
+
+**Ultrasonic readings are not obstacles.** `ultrasonic_msg.lf_dis` and `rf_dis` read `-3` when nothing echoes and roughly 90 to 1,800 (millimetres, by the range) otherwise; `mt_dis` read `0` or `9999` throughout. Close readings are frequent while mowing. A first obstacle log treated each run of close readings as an obstacle: in under three minutes of the West Lawn run it logged 19, most from the right sensor, one every 3 to 5 seconds in a straight line 0.1 to 0.9 m beside the robot's track as it mowed a strip. That is the uncut grass next to the strip. The user confirmed none of them existed, and the ultrasonic source was removed. How the robot's visible avoidance shows up in telemetry, when the barrier list is empty, is still open; it needs a recording taken while someone notes each real avoidance.
+
+**Run history.** `read_all_plan_history {}` answers state 0 with `{data: [...]}`, one record per finished run: `id`, `plan {id, name, areaIds}`, `clean_area_ids`, `startTime`/`endTime`, `startTimeV`/`endTimeV` and `start_battery_capacity`/`end_battery_capacity` per work segment, `duration`, `actualCleanArea`, `finishCleanArea`, `totalCleanArea`, `schedule_end_percent`, `finishType`, `cleanState`, `head_type`, `area_path` with `area_path_index`, and the head settings used (`mower_params`, `snow_blower_params`, `blower_params`, `sam_params`). It holds no obstacle data. The East Lawn run is recorded as five segments from 16:01 to 19:02, 103 minutes of work, ending at 79 % with the battery at 38 %; the segment that ended at 17:45 is when error 901 began. The run in progress does not appear until it ends.
+
+**Error 901.** During the East Lawn run `StateMSG.error_code` went to 901 at 17:45 with the battery at 41 %, stayed there until 19:03, briefly returned to 0 while the robot started returning, went back to 901, and cleared at 19:59; the robot then returned to the dock. The meaning of 901 is unknown. Home Assistant's history holds the timeline; no capture was running.
+
+**Charging, positive direction.** After that return, the library's charging rule (`BatteryMSG.status` above 1 or `StateMSG.charging_status` set) turned on at 20:03 while the battery rose from 36 % to 59 % in 33 minutes. That is the first observation of the rule firing correctly; which of the two fields fired was not captured.
+
+## 16. Faults
+
+`StateMSG.error_code` is the only fault signal, and it is a bare number. The Yarbo app supplies the wording from its own table; no public source has that table. So a code gets text in `models.FAULTS` only after the app's message has been seen for it on a real robot, and `codes.yaml` records when. Anything else is shown as "Fault N", with a pointer to the app, never as a bare "error".
+
+**902, tilted or flipped over.** 2026-09-15, Mower Pro on the West Lawn plan. In the same frame, `error_code` went 0 to 902, `on_going_planning` went 1 to 0, `planning_paused` went 0 to 7, and `car_controller` went false. One second later, `plan_msg` read "Goal canceled". The Mower Pro head's `RunningStatusMSG.head_gyro_pitch` rose from about 2° to 12° over the four seconds before. The app showed "Tilted or flipped over". Nothing arrived on `data_feedback` or any other topic. The code stayed at 902 until the plan was resumed from the app 238 s later (`app/resume {}`), when all three fields returned to running values in one frame. This confirms `planning_paused` 7 as the fault pause reason. Fixture: `mower-pro-fault-902-tilted.jsonl`.
+
+**Clearing a fault.** `resume` cleared 902 while the plan was still loaded: seven times on 2026-09-15 the app sent it and the robot went back to `on_going_planning` 3. It stopped working once the robot had slept on the fault: the robot answered `plan_msg` "Goal canceled" and stayed at `planning_paused` 7, with the machine sitting level (head gyro pitch -3°, roll 4°), so the code is latched rather than a live reading of attitude. `cmd_recharge {"cmd": 2}` did clear it: one second after the send, `error_code` was 0 and `on_going_recharging` was 1. Fixture: `return-to-dock-from-fault.jsonl`.
+
+**901, unidentified.** Seen 2026-09-14 from 17:45 to 19:59 during the East Lawn plan, which ended at 79%. The app's text for it was not recorded.
+
+## 17. One robot, two addresses, two sessions
+
+Settled on 2026-09-18 with `yarbo-local sitecheck`: a session to the rover and a session to the base station relay, open at the same time for the same serial, both stayed connected, and both answered `get_device_msg` (72 and 83 ms), `read_all_plan` and `get_map` with the robot asleep. Neither saw traffic for any other serial. So both brokers accept simultaneous sessions and both relay requests, not only telemetry. Whether a relay ever carries a second rover is still unknown; `docs/multi-robot.md` is the request for that.
+
+## 18. Plan lifecycle on the wire
+
+From the West Lawn afternoon of 2026-09-15 (eight tilt faults, one emergency stop, eight resumes, then sent home). Fixtures: `mower-pro-run-faults-estop.jsonl`, `return-to-dock-from-fault.jsonl`.
+
+- **A paused plan reports `on_going_planning` 0.** With a fault the frame reads planning 0, `planning_paused` 7, `error_code` 902; after an emergency stop, planning 0, paused 4, no error. The vendor SDK's rule, "planning is running and paused is set", never matches, and a rule that ends a run when planning leaves the running codes would have ended this run nine times. Our own `Activity` had the same bug and showed an emergency-stopped robot as idle.
+- **`plan_feedback` is published only while the plan moves.** It stopped within a second of every pause (gaps of 238 s and 98 s) and started again on resume with the same `planId` and `startTime`, so those two fields identify a run across pauses. `state` mirrors `on_going_planning` (1, 3). `runningState` took the values 0, 3, 11, 16 and 17 for a second or two at a time; their meaning is unknown.
+- **Progress is `finishCleanArea / totalCleanArea`**: 49.9 percent when recording began, 89.3 percent at the last fault. `actualCleanArea` runs a few points lower. `duration` counts seconds of work and does not advance while paused; `leftTime` is seconds.
+- **Resume goes through "heading to area".** Each `app/resume {}` took the robot to planning 3 within two seconds, then to 1 some twenty seconds later. There is no `data_feedback`.
+- **Going home ends the run, and the pause code lags.** After `cmd_recharge`, `on_going_recharging` went 1, then 3, then 0 while `planning_paused` still read 7. It cleared about 15 s after docking, before charging began, so for those seconds the pause code is the only thing set.
+- **Still not seen:** (a start and a completion have been seen since, see 19) a stop from the app, and a low-battery return that resumes by itself. `lifecycle.py` handles those by the vendor's and the jtubb fork's rules, and says so.
+
+## 19. Starting and pausing a plan, and why a start fails silently
+
+From 2026-09-18, East Lawn plan, app on the LAN. Fixtures: `plan-start-fails-route-wp005.jsonl`, `plan-start-from-dock.jsonl`, `plan-pause-resume-app.jsonl`.
+
+- **Start.** The app sends `check_map_connectivity {"ids": [area]}`, `get_map`, then `start_plan {"id": 1, "percent": 0}`. There is no `data_feedback`. `on_going_planning` goes to 2 (calculating) within a second, to 3 a second later, and to 1 when the robot reaches the area, about three minutes here. `car_controller` turns true and `plan_feedback` starts at once with `state` 3. The app sent no `get_controller`.
+- **A start that cannot work says nothing.** The planning code goes to a negative value and stays there until the next start; there is no message, no `error_code` and no reply. -12 is what the app shows as WP005, "Failed to calculate route". `check_map_connectivity` answered three empty lists both when the start failed and when it worked, so it is no help.
+- **The cause here was a pathway not linked to the dock.** The robot computes `start_id` and `end_id` when a pathway is saved; 0 is the dock. It links a pathway to the dock only when the first point is close to the charging point: 0.27 m linked, 0.31 m did not. Re-saving the pathway with its own id and the first point moved onto the charging point turned `start_id` -1 into 0 in the reply, and the plan then started. Two pathways can hold the dock link. Links can also be lost later: "Pathway 1" had both when saved on 2026-09-14 and has neither now, though its points never changed.
+- **Pause.** `pause {}`: half a second later planning 1 to 0, `planning_paused` 1 (manual), `plan_msg` "Goal canceled " for one frame, `car_controller` false. No `data_feedback`. `resume {}` took planning straight back to 1 within a second, not through 3, because the robot had not moved.
+- **Completion.** The East Lawn ran to the end at 18:01 UTC after 5234 s of work. The last `plan_feedback` carried `state` 5, `cleanAreaId` -1, `leftTime` 0, all of the area finished, and `finishIds` listing the area twice: `move_type` 0 when the edge pass ended (86 percent, where the state went 1, 3, 1 for half a minute) and `move_type` 1 when the fill ended. The 1 Hz state never showed 5. It went from 1 to 0 with `on_going_recharging` 2, then 1 a second later: the robot heads home by itself, with no command from the app. Recharging read 3 for the last forty seconds, then 0; charging began a minute after that. `runningState` 11 showed for two seconds every few minutes and 17 once after the edge pass; still unexplained. Fixture: `plan-completes-and-docks.jsonl`.
+- **Stop, effects only.** Stop pressed in the app at 50 percent of the West Lawn: the state read exactly like a pause (planning 1 to 0, `planning_paused` 1, "Goal canceled "), and four seconds later `planning_paused` went back to 0 with planning still 0. That second step is the stop. The robot stayed where it was. A second stop four minutes later, pressed while the robot was still heading to the area (planning 3), went straight from 3 to 0 with "Goal canceled " and no pause code at all. The command itself was not seen: for those minutes the app published nothing on the local broker, keep-alives included. The phone was on Wi-Fi the whole time with mobile data off, so the app reached the robot through the vendor's cloud over Wi-Fi, by its own choice; why it sometimes uses the local broker (as it did that morning) and sometimes does not is not known. A start made that way still shows locally as the robot's reply to `get_plan_feedback` and the state going 0, 2, 3. Fixture: `plan-stopped-from-app-effects-only.jsonl`.
+- **Both brokers carry the same traffic,** app publishes included, so a listener on either sees everything. They silently ignore a `#` subscription; `snowbot/+/#` works.
+- **Unexplained:** the first pause that day never crossed the local broker, and the app's 10 s keep-alive was missing for the 30 s around it, with the phone on Wi-Fi. The app presumably used the vendor's cloud for that moment.
+
+## Values settled
+
+- `set_sound_param.vol` scale: `StateMSG.volume` is a float 0 to 1, matching the vendor SDK.
+- `data_feedback.state` is 0 on success and negative on failure, with a human `msg`. -1 "no plan working", -2 for the global params error.
+- `phi` fields are radians; `RTKMSG.heading` is degrees.
+
+## Still open
+
+`cmd_recharge` cmd value, `plan_feedback` wire casing, `BatteryMSG.status` values while driving, what the robot publishes on controller theft, whether a base station ever relays more than one rover, TLS on 8883, and the app's text for every fault code other than 902.
+
+## 20. The app's plan, schedule and settings commands; the rain hold (2026-09-26)
+
+Recorded from the rover's broker while the owner worked through the app on the local route (its keep-alive was visible), then tried to start the East Lawn plan. Fixture: `app-plan-schedule-settings-rain.jsonl`.
+
+- **Plans.** `save_plan {id, areaIds, name, enable_self_order}` creates a plan; the app picks the next free id itself (3). `sort_plan {ids}` followed at once with the new plan first. `del_plan {id}` deletes, and it deleted the plan's schedule too: `read_schedules` returned `[]` straight after. Each reply is state 0 with a sentence in `msg`, such as "The plan was saved successfully.", and empty `data`.
+- **Schedules.** `save_schedule` carries `plan_id`, `name`, `schedule_type` 3, `week_day` 1, `start_time` "17:09:00", `end_time` "16:10:00", `return_method` 2, `enable`, `enable_last_progress`, `last_progress`. The reply echoes it and adds `interval_time`, `times`, `timezone` "", `is_weather_schedule` and `completed_this_window`. The field meanings and the time zone are open. No separate schedule delete was seen.
+- **General settings.** `save_global_params` sends a whole record, 56 of the 68 keys `read_global_params` returns; the change was `recharge_battery` 20 to 25.
+- **Before a start** the app sends `check_map_connectivity {ids: [4]}`; the East Lawn answered `disconnected: [], invalid: [], normal: []`.
+- **Also seen:** `read_tow_params` (`enable` false, `move_speed` 0.4), `read_no_charge_period` (`[]`), `read_low_cfd_config` (per-area low-confidence limits), `mower_head_sensor_switch {state: -99}` (a query; reply state 33), `smart_vision_control {state: 1}` then `{state: 0}` (what it switches is not established).
+- **The rain hold.** One second after `start_plan {id: 1, percent: 0}` the robot stopped charging (`on_going_recharging` 4 to 0, `charging_status` 2 to 0); three seconds later `planning_paused` went 0 to 9, `charging_status` 0 to 6 and `plan_msg` read "cancel ". `on_going_planning` never left 0 and nothing came on `data_feedback` for the start. The app showed "Rain detected". RTK was fixed (status 4, about 30 satellites). Eleven seconds later the app sent `clear_plan_state {state: 9}`; the robot stayed paused 9. So `planning_paused` 9 is rain.
+- **Charging means `charging_status` 2.** Across every capture only 2 has current flowing into the pack (up to +14.3 A, `BatteryMSG.status` 3). 0, 1 and 6 all show the pack discharging; 6 is the rain hold, at -0.4 A with `BatteryMSG.status` 1. The library had counted any non-zero value as charging and so called the rain hold "charging".
+
+## 21. Verifying the rest on the robot (2026-09-26)
+
+With the owner's go-ahead, every remaining candidate was sent to the robot on its dock (Mower Pro, firmware 3.14.11), its effect read back, and anything changed put back. Backups of the map, zones, plans, schedules, dock and every area's settings were taken first. Fixtures: `verify-*.jsonl`. 32 commands became verified; 55 are verified in all, 11 remain candidates.
+
+- **Settings.** `set_person_detect`, `set_child_lock` and `set_sound_param` are read back in `StateMSG` within four seconds. The volume scale is 0.0 to 1.0: 0.5 read back as 0.5. `set_follow_state` changes `robot_follow_state` but sends no reply.
+- **Whole-record saves.** Area mowing settings, area settings, pathway settings, the dock and the general settings each stored a re-sent record exactly, and the pathway links to the dock survived. An unchanged general-settings save answers "No changes detected, parameters unchanged.".
+- **Area pattern.** `save_clean_area` with an id edits the area in place and replies with the stored record. On the East Lawn, `algorithm_type` 0 plans rows and 1 a contour spiral; 2, 3 and 5 plan exactly what 0 does; 4 plans rows with fewer turns.
+- **Map objects.** No-go zones, pathways and sidewalks are created by leaving out the id; the robot numbers them from one counter shared by all three (the test objects all got 20). With an id they are edited in place. Each has a delete with a confirming message. A pathway inside an area links to that area at both ends. Sidewalk records carry `tow_length` and `tow_width`.
+- **Plans and schedules.** `save_plan` without an id creates a plan and the robot assigns the next number; with an id it edits the name and areas. `del_schedule` exists (the name was guessed and answered "Schedule deleted successfully."). A disabled schedule is stored as sent, times verbatim.
+- **Head.** `mower_target_cmd` moves the lift motor to the target (`mower_head_info01.lift_motor_place`, 50 to 70 in seven seconds). `mower_speed_cmd` did not spin the blades on the dock outside a plan.
+- **Charging.** `wireless_charging_cmd {cmd: 1}` starts wireless charging on the dock: `charging_status` 6 or 0 to 1 to 2, `BatteryMSG.status` 1 to 3.
+- **Restart.** `restart_container` answered "Container restarted successfully."; the robot and its broker were gone for 120 s, came back with every setting kept, and had cleared a rain hold. It did not resume charging until told to. The Home Assistant integration reconnected on its own. The capture tool did not, and now reconnects.
+- **Queries that answer 33.** `mower_head_sensor_switch {state: -99}` answers with state 33. The registry now lets an entry list the reply states that mean success (`ok_states`).
+- **Lights.** `LedInfoMSG` reports the body and tail lights, and the robot drives them from its status: they went off when charging started. `light_ctrl` changed nothing while that is so.
+- **Still candidates:** `cmd_buzzer` and `song_cmd` (need someone to listen), `light_ctrl` (need someone to look), `set_map_obstacle_switch` and `smart_vision_control` (acknowledged, no visible effect), `mower_speed_cmd`, `emergency_stop_active` and `emergency_unlock` (need a run), `clear_plan_state` (it was still raining), `cmd_set_chute_angle` (needs the snow blower), `shutdown` (someone must switch the robot back on).
+
+## 22. Starting a plan the way the app does; sounds and lights by person (2026-10-02)
+
+The owner stood beside the robot for the sound and light candidates, then a run of the East Lawn plan was started for the remaining run commands.
+
+- **A library start that took the controller crawled.** `set_working_state`, `get_controller` and `start_plan {id: 1, percent: 0}` gave `on_going_planning` 3 for 17 minutes with no pause code and no error, but the robot drove only in bursts of 30 to 45 s (four in eleven minutes, about 7 m each) and never reached the lawn; after a pause and resume from the app it drove back to the dock. The owner then started the same plan from the app: `check_map_connectivity {ids: [4]}`, `get_map`, `start_plan {id: 1, percent: 0}` with no `get_controller`, and the robot drove straight out and was mowing (`on_going_planning` 1) four minutes later. The two `start_plan` payloads were identical. Which difference mattered is not known: on 2026-09-18 the same library shortcut started the west lawn plan twice and both runs went normally.
+- **Run commands go out without the controller.** Counted over every capture of the bus (sends within six seconds of our own `smart_home` wake-up excluded; who published each one is not known, see the stop-button note below): `start_plan` 6, `pause` 5, `resume` 28, `stop` 4, `emergency_stop_active` 2, `emergency_unlock` 4, `mower_speed_cmd` 6 and `clear_plan_state` 1 times, never after a `get_controller`. A `get_controller` came before `cmd_recharge` (2 of 3), `set_person_detect`, `save_global_params`, `save_nogozone` and `set_follow_state`. The registry now marks the first eight as not needing the controller, and the library's start sends the app's sequence.
+- **`car_controller` says nothing about `get_controller`.** It reads true in every capture while a plan runs, whoever started it.
+- **Sounds.** `song_cmd {song_name: "find yarbo"}` makes three buzzes of about 5 s each, at once; sent in the same second as `get_controller` it was silent, and the voice prompt "app controller connected" (which every `get_controller` plays) was heard instead. `cmd_buzzer` was silent for state 1 alone and for 1 then 0. Both stay candidates until a run with a capture.
+- **Lights.** `light_ctrl` lit nothing visible on the dock while charging, for each of the seven channels alone and for all seven at 255.
+- **Still to run during a mow:** `mower_speed_cmd`, `emergency_stop_active`, `emergency_unlock`, `clear_plan_state`. Capture: `captures/run-tests-1002.jsonl` (not committed).
+- **Correction, 2026-10-04: the start sequence does not decide the stall.** The East Lawn plan was started three times that morning and stalled each time 12.7 m from the dock with `on_going_planning` 3, no pause code and no error: once with the library's app-like start (no `get_controller`), once after a pause and `resume` (the robot first drove back to within 3.7 m of the dock, then out again to the same spot), and once with the app's exact messages (`check_map_connectivity`, `get_map {}`, `start_plan`, `get_plan_feedback`, `read_mower_area_params`) and its `set_working_state {"state": 1}` keep-alive every 10 s. Keep-alives alone did not move the stalled robot. On 2026-10-03 the same library start took the west lawn plan to its lawn in three minutes. At the stall the fix was RTK 4 with 26 satellites, `cloud_points_feedback.tmp_barrier_points` was empty throughout, and `rotate_rad` stayed 0.0; in runs that reached their lawn `rotate_rad` became non-zero during the trip (2.44 East, -1.95 west). Cause not found.
+- **During a plan (2026-10-04).** `get_controller` followed at once by `song_cmd` was followed by `on_going_planning` 3 to 0, `planning_paused` 1 and `plan_msg` "Goal canceled "; `resume` brought the plan back and the robot re-drove its pathway from near the dock. `light_ctrl` works away from the dock: `LedInfoMSG` followed it both ways. `emergency_stop_active {}` did not stop a robot driving its pathway. `mower_speed_cmd` did nothing while the blades were off.
+- **The stall was a parked car (2026-10-04).** The owner confirmed a car stood on the driveway across the East Lawn pathway, 12.7 m from the dock. A robot whose pathway is blocked waits there without saying so: `on_going_planning` stays 3, no pause code, no error, no barrier points, an occasional creep of under a metre; `HubInfoMSG.led_top_switch` reads 0 and `DebugMsg.debug_para10` 1 while it waits. No start sequence was at fault.
+- **Mowing tests on the west lawn (2026-10-04).** `pause`, `resume` and `stop` work without the controller: blades from 2800 rpm to 0 in two seconds and back in four. `get_controller` sent alone during a mow pauses the plan (pause code 1, blades off); `resume` continues it. `song_cmd` with the controller already held does not interrupt the mow. `mower_speed_cmd` 50 and 100 changed nothing (the plan holds -80/80, 2800 rpm). `emergency_stop_active {}` and `emergency_unlock {confirm: 1}` had no effect while mowing. After `cmd_recharge` the robot docked (`on_going_recharging` 4) but sat at `charging_status` 6 for four and a half minutes until `wireless_charging_cmd {cmd: 1}` started charging; earlier the same day it had gone 6 to 2 by itself within 32 s.
+- **The emergency stop is a physical button, and so is its release (owner, 2026-10-04).** The app has no emergency stop. Pressing the button on the robot cancels the plan with pause code 4; pulling it back out unlocks it. On 2026-09-15 the bus showed `BodyMsg.body_stop_button_state` 1 at the press, 3 three seconds later, then `emergency_unlock {confirm: 1}` on the app topic with the state back to 0 in the same second, and `resume` two seconds after that. The owner says the phone did not send that `emergency_unlock`: it appeared when the button was pulled out. A capture cannot tell who published a message, so **a message on an `app/` topic is not proof the phone sent it**; the per-command counts above carry that caveat. `emergency_stop_active` and `emergency_unlock` sent by us do nothing. `body_stop_button_state` is the field to show the button in an interface.
+
+## 23. What the library does with it (2026-10-04)
+
+- **Waiting.** `RobotState.waiting` (and `Activity.WAITING`) is a plan with code 1 or 3, no pause code, and the robot within one metre of the same spot for sixty seconds, counted only while the plan drives. Replayed over the week's recordings it marks every real stall, from the car and from 2026-10-02, and nothing in two normal runs, where the longest stop was ten seconds. Fixture: `pathway-blocked-waiting.jsonl`.
+- **The controller during a plan.** The session refuses a command that needs the controller while a plan runs, unless the caller passes `may_pause_plan`. Going home passes it. Fixtures: `verify-controller-pauses-plan.jsonl`, `verify-pause-resume-no-controller.jsonl`, `plan-start-library-no-controller.jsonl`.
+- **The stop button.** `RobotState.stop_button_engaged` reads `BodyMsg.body_stop_button_state`.
+- **Typed writes.** Plans, schedules, sound, person detection, child lock, follow mode, general settings, an area's mowing settings, no-go zones, pathways, sidewalks, areas, the route preview, blade height and start-charging have methods on `YarboRobot`; their payloads are compared with the recorded ones in the tests. Run against the robot on its dock at 14:02: both route previews (East 117 fill and 67 edge points, estimate 3937 s; west 465 and 42, 6990 s), both whole-record saves sent unchanged and read back identical (31 and 56 keys), a plan created as id 3 with a disabled schedule and deleted again with its schedule, a no-go zone created as id 20 and deleted, pathway links intact afterwards.
+- **Promoted.** `light_ctrl` and `song_cmd` are verified (57 commands). `cmd_buzzer`, `mower_speed_cmd`, `emergency_stop_active` and `emergency_unlock` carry `outcome: no_effect`: sent on hardware, changed nothing. Pending and needing the owner or the right conditions: `smart_vision_control`, `set_map_obstacle_switch`, `clear_plan_state`, `shutdown`, `cmd_set_chute_angle`. 21 more DeviceMSG fields are confirmed (71 of 429).
+
