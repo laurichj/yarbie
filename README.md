@@ -50,7 +50,7 @@ Safety rails:
 
 Home Assistant 2026.10 or newer, able to reach the robot on TCP port 1883.
 
-1. HACS, Integrations, three dots, Custom repositories: add this repository as an
+1. HACS, Integrations, three dots, Custom repositories: add `https://github.com/laurichj/yarbie` as an
    Integration, install **yarbie**, restart Home Assistant. (Or copy
    `custom_components/yarbie` into your config's `custom_components`.)
 2. Settings, Devices & services, Add integration, **yarbie**. Leave the address empty to
