@@ -17,7 +17,9 @@
       "pick": {
         "title": "Choose a robot",
         "description": "More than one Yarbo answered.",
-        "data": { "serial": "Robot" }
+        "data": {
+          "serial": "Robot"
+        }
       },
       "confirm": {
         "title": "Add Yarbo {serial}?",
@@ -67,29 +69,67 @@
   },
   "entity": {
     "binary_sensor": {
-      "charging": { "name": "Charging" },
-      "problem": { "name": "Problem" },
-      "rain": { "name": "Rain" },
-      "emergency_stop": { "name": "Emergency stop" },
-      "rtk_fix": { "name": "RTK fix" },
-      "planning": { "name": "Plan running" },
-      "awake": { "name": "Awake" },
-      "power_fault": { "name": "Power fault" },
-      "push_pod_fault": { "name": "Push pod fault" },
-      "left_wheel_fault": { "name": "Left wheel fault" },
-      "right_wheel_fault": { "name": "Right wheel fault" }
+      "charging": {
+        "name": "Charging"
+      },
+      "problem": {
+        "name": "Problem"
+      },
+      "rain": {
+        "name": "Rain"
+      },
+      "emergency_stop": {
+        "name": "Emergency stop"
+      },
+      "rtk_fix": {
+        "name": "RTK fix"
+      },
+      "planning": {
+        "name": "Plan running"
+      },
+      "awake": {
+        "name": "Awake"
+      },
+      "power_fault": {
+        "name": "Power fault"
+      },
+      "push_pod_fault": {
+        "name": "Push pod fault"
+      },
+      "left_wheel_fault": {
+        "name": "Left wheel fault"
+      },
+      "right_wheel_fault": {
+        "name": "Right wheel fault"
+      }
     },
     "button": {
-      "beep": { "name": "Beep" },
-      "return_to_dock": { "name": "Return to dock" },
-      "pause": { "name": "Pause" },
-      "resume": { "name": "Resume" },
-      "stop": { "name": "Stop" },
-      "wake": { "name": "Wake" },
-      "refresh_map": { "name": "Refresh map" }
+      "beep": {
+        "name": "Beep"
+      },
+      "return_to_dock": {
+        "name": "Return to dock"
+      },
+      "pause": {
+        "name": "Pause"
+      },
+      "resume": {
+        "name": "Resume"
+      },
+      "stop": {
+        "name": "Stop"
+      },
+      "wake": {
+        "name": "Wake"
+      },
+      "refresh_map": {
+        "name": "Refresh map"
+      }
     },
     "device_tracker": {
-      "position": { "name": "Position" }
+      "position": {
+        "name": "Position"
+      }
     },
     "event": {
       "plan_event": {
@@ -106,11 +146,20 @@
         }
       }
     },
+    "image": {
+      "map": {
+        "name": "Map"
+      }
+    },
     "light": {
-      "lights": { "name": "Lights" }
+      "lights": {
+        "name": "Lights"
+      }
     },
     "select": {
-      "plan_select": { "name": "Plan" }
+      "plan_select": {
+        "name": "Plan"
+      }
     },
     "sensor": {
       "activity": {
@@ -130,11 +179,21 @@
           "error": "Error"
         }
       },
-      "battery": { "name": "Battery" },
-      "error": { "name": "Error" },
-      "plan": { "name": "Running plan" },
-      "plan_progress": { "name": "Plan progress" },
-      "time_remaining": { "name": "Time remaining" },
+      "battery": {
+        "name": "Battery"
+      },
+      "error": {
+        "name": "Error"
+      },
+      "plan": {
+        "name": "Running plan"
+      },
+      "plan_progress": {
+        "name": "Plan progress"
+      },
+      "time_remaining": {
+        "name": "Time remaining"
+      },
       "head": {
         "name": "Head",
         "state": {
@@ -148,20 +207,44 @@
           "unknown": "Unknown"
         }
       },
-      "rtk_status": { "name": "RTK status" },
-      "satellites": { "name": "Satellites" },
-      "heading": { "name": "Heading" },
-      "battery_voltage": { "name": "Battery voltage" },
-      "battery_current": { "name": "Battery current" },
-      "left_blade_rpm": { "name": "Left blade speed" },
-      "right_blade_rpm": { "name": "Right blade speed" },
-      "left_wheel_speed": { "name": "Left wheel speed" },
-      "right_wheel_speed": { "name": "Right wheel speed" }
+      "rtk_status": {
+        "name": "RTK status"
+      },
+      "satellites": {
+        "name": "Satellites"
+      },
+      "heading": {
+        "name": "Heading"
+      },
+      "battery_voltage": {
+        "name": "Battery voltage"
+      },
+      "battery_current": {
+        "name": "Battery current"
+      },
+      "left_blade_rpm": {
+        "name": "Left blade speed"
+      },
+      "right_blade_rpm": {
+        "name": "Right blade speed"
+      },
+      "left_wheel_speed": {
+        "name": "Left wheel speed"
+      },
+      "right_wheel_speed": {
+        "name": "Right wheel speed"
+      }
     },
     "switch": {
-      "sound": { "name": "Voice prompts" },
-      "person_detection": { "name": "Person detection" },
-      "child_lock": { "name": "Child lock" }
+      "sound": {
+        "name": "Voice prompts"
+      },
+      "person_detection": {
+        "name": "Person detection"
+      },
+      "child_lock": {
+        "name": "Child lock"
+      }
     }
   },
   "services": {
@@ -169,31 +252,70 @@
       "name": "Start plan",
       "description": "Starts one of the robot's plans, the way the Yarbo app does.",
       "fields": {
-        "config_entry_id": { "name": "Robot", "description": "Only needed with more than one robot." },
-        "plan": { "name": "Plan name", "description": "The plan's name as the robot has it." },
-        "plan_id": { "name": "Plan id", "description": "Instead of the name." }
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Only needed with more than one robot."
+        },
+        "plan": {
+          "name": "Plan name",
+          "description": "The plan's name as the robot has it."
+        },
+        "plan_id": {
+          "name": "Plan id",
+          "description": "Instead of the name."
+        }
       }
     },
     "set_lights": {
       "name": "Set lights",
       "description": "Sets all seven light channels at once (0 to 255). Takes the robot's controller, so it is refused during a plan.",
       "fields": {
-        "config_entry_id": { "name": "Robot", "description": "Only needed with more than one robot." },
-        "brightness": { "name": "Brightness", "description": "For every channel not given below." },
-        "led_head": { "name": "Head", "description": "Head light." },
-        "led_left_w": { "name": "Left white", "description": "Left white light." },
-        "led_right_w": { "name": "Right white", "description": "Right white light." },
-        "body_left_r": { "name": "Body left", "description": "Body light, left." },
-        "body_right_r": { "name": "Body right", "description": "Body light, right." },
-        "tail_left_r": { "name": "Tail left", "description": "Tail light, left." },
-        "tail_right_r": { "name": "Tail right", "description": "Tail light, right." }
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Only needed with more than one robot."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "For every channel not given below."
+        },
+        "led_head": {
+          "name": "Head",
+          "description": "Head light."
+        },
+        "led_left_w": {
+          "name": "Left white",
+          "description": "Left white light."
+        },
+        "led_right_w": {
+          "name": "Right white",
+          "description": "Right white light."
+        },
+        "body_left_r": {
+          "name": "Body left",
+          "description": "Body light, left."
+        },
+        "body_right_r": {
+          "name": "Body right",
+          "description": "Body light, right."
+        },
+        "tail_left_r": {
+          "name": "Tail left",
+          "description": "Tail light, left."
+        },
+        "tail_right_r": {
+          "name": "Tail right",
+          "description": "Tail light, right."
+        }
       }
     },
     "get_map": {
       "name": "Get map",
       "description": "Returns the robot's map as GeoJSON (WGS84) with its revision.",
       "fields": {
-        "config_entry_id": { "name": "Robot", "description": "Only needed with more than one robot." }
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Only needed with more than one robot."
+        }
       }
     }
   }

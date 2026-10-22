@@ -1,0 +1,46 @@
+blueprint:
+  name: Yarbo - low battery alert
+  description: Tell someone when the robot's battery falls below a level while it is off the dock.
+  domain: automation
+  input:
+    battery:
+      name: Battery sensor
+      selector:
+        entity:
+          domain: sensor
+          integration: yarbie
+          device_class: battery
+    charging:
+      name: Charging sensor
+      selector:
+        entity:
+          domain: binary_sensor
+          integration: yarbie
+          device_class: battery_charging
+    below:
+      name: Below
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 90
+          unit_of_measurement: "%"
+    notify:
+      name: Then
+      description: For example a notify action to your phone.
+      selector:
+        action:
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input battery
+    below: !input below
+
+conditions:
+  - condition: state
+    entity_id: !input charging
+    state: "off"
+
+actions: !input notify
+
+mode: single

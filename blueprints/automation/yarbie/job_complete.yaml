@@ -1,0 +1,44 @@
+blueprint:
+  name: Yarbo - plan finished
+  description: >
+    Run actions when a plan ends. The plan's name, why it ended (completed, returned to
+    dock, stopped) and its progress are available as variables: plan, reason, progress.
+  domain: automation
+  input:
+    plan_event:
+      name: Plan event
+      selector:
+        entity:
+          domain: event
+          integration: yarbie
+    only_completed:
+      name: Only when completed
+      description: Skip runs that were stopped or sent home early.
+      default: false
+      selector:
+        boolean:
+    notify:
+      name: Then
+      selector:
+        action:
+
+triggers:
+  - trigger: state
+    entity_id: !input plan_event
+    not_from: unavailable
+
+variables:
+  only_completed: !input only_completed
+  plan: "{{ trigger.to_state.attributes.plan | default('the plan') }}"
+  reason: "{{ trigger.to_state.attributes.reason | default('') }}"
+  progress: "{{ trigger.to_state.attributes.progress | default(none) }}"
+
+conditions:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.event_type == 'plan_finished' }}"
+  - condition: template
+    value_template: "{{ not only_completed or reason == 'completed' }}"
+
+actions: !input notify
+
+mode: queued
