@@ -46,8 +46,8 @@ Where the build differs from the plan below:
 
 Not done yet:
 
-- Phase 7 (migration on the real robot) and phase 8 (removing `backend/` and the Docker
-  files).
+- Phase 7 (migration on the real robot). Phase 8 (removing `backend/` and the Docker
+  files) was done ahead of it, before merging.
 - The panel's phone layout and HA theme colours.
 - Entity icons.
 - The error sensor as an enum with translated fault names.
@@ -117,8 +117,8 @@ docs/ha-design.md  docs/mockups/
 ```
 
 `backend/`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` and
-`pyproject.toml`'s server entry points go away once the integration has parity.
-`pyproject.toml` stays for dev tools: pytest, `ty`, and the HA test harness.
+`pyproject.toml`'s server entry points are gone (phase 8). `pyproject.toml` stays for dev
+tools: pytest, `ty`, the HA test harness, and the integration's `aiomqtt` requirement.
 
 ## Library: vendoring and staying in sync
 
@@ -365,7 +365,7 @@ Each phase ends with `pytest`, `ty check`, and the frontend typecheck passing.
    manifest.
 7. **Migration** (the section above).
 8. **Clean up.** Remove `backend/`, the Docker files and the server dependencies, and
-   rewrite the README around the integration.
+   rewrite the README around the integration. Done, ahead of phase 7.
 
 ## TODO
 

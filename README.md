@@ -113,9 +113,3 @@ python3 scripts/vendor_yarbo_local.py
 ```
 
 Then redo the first-time checks above on the robot.
-
-### The old standalone server
-
-`backend/` (FastAPI) and the Docker files are the editor as it ran before the
-integration. They stay until the integration has replaced the current Yarbo integration
-on the real robot, then go.
