@@ -16,6 +16,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from . import schedules
 from ._vendor.yarbo_local.exceptions import YarboError
 from ._vendor.yarbo_local.payloads import APP_MOWER_AREA_KEYS
 from .const import DOMAIN, OPT_GOOGLE_MAPS_KEY
@@ -273,6 +274,78 @@ async def ws_plan_delete(hass: HomeAssistant, connection: websocket_api.ActiveCo
     connection.send_result(msg["id"], {"deleted": msg["plan_id"]})
 
 
+def _schedules_reply(c: YarbieCoordinator) -> dict[str, Any]:
+    names = {p.id: p.name for p in c.plans}
+    return {
+        "schedules": [schedules.public(s, names) for s in c.schedules],
+        "plans": [{"id": p.id, "name": p.name} for p in c.plans],
+        # What the card fills a new schedule with, and how the calendar reads them.
+        "defaults": schedules.APP_DEFAULTS,
+        "reading": schedules.READING,
+    }
+
+
+@_command({probatio.Required("type"): "yarbie/schedules/list"})
+async def ws_schedules(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The robot's schedules with its numbers as stored (their meanings are unconfirmed)."""
+    c = _coordinator(hass, msg)
+    c.plans = await c.robot.plans()
+    c.schedules = await c.robot.schedules()
+    c.async_update_listeners()
+    connection.send_result(msg["id"], _schedules_reply(c))
+
+
+CLOCK = probatio.All(str, probatio.Match(r"^\d{2}:\d{2}:\d{2}$"))
+NUMBER = probatio.All(int, probatio.Range(min=0))
+
+
+@_command(
+    {
+        probatio.Required("type"): "yarbie/schedules/save",
+        probatio.Optional("schedule_id"): probatio.Any(int, None),
+        probatio.Required("plan_id"): int,
+        probatio.Required("name"): probatio.All(str, probatio.Length(min=1)),
+        probatio.Required("start_time"): CLOCK,
+        probatio.Required("end_time"): CLOCK,
+        probatio.Optional("week_day", default=schedules.APP_DEFAULTS["week_day"]): NUMBER,
+        probatio.Optional("schedule_type", default=schedules.APP_DEFAULTS["schedule_type"]): NUMBER,
+        probatio.Optional("return_method", default=schedules.APP_DEFAULTS["return_method"]): NUMBER,
+        probatio.Optional("enabled", default=True): bool,
+        probatio.Optional("resume_progress", default=False): bool,
+    }
+)
+async def ws_schedule_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Create a schedule, or with ``schedule_id`` replace it. The numbers go as given."""
+    c = _coordinator(hass, msg)
+    if all(p.id != msg["plan_id"] for p in c.plans):
+        raise ValueError(f"the robot has no plan {msg['plan_id']}")
+    current = next((s for s in c.schedules if s.id == msg.get("schedule_id")), None)
+    if msg.get("schedule_id") is not None and current is None:
+        raise LookupError(f"the robot has no schedule {msg['schedule_id']}")
+    stored = await c.async_save_schedule(
+        schedule_id=msg.get("schedule_id"),
+        plan_id=msg["plan_id"],
+        name=msg["name"],
+        start_time=msg["start_time"],
+        end_time=msg["end_time"],
+        week_day=msg["week_day"],
+        schedule_type=msg["schedule_type"],
+        return_method=msg["return_method"],
+        enabled=msg["enabled"],
+        resume_progress=msg["resume_progress"],
+        # The robot's own count; kept as it was (0 for a new schedule, as the app sends).
+        last_progress=current.last_progress if current else 0,
+    )
+    connection.send_result(msg["id"], {"id": stored.id, **_schedules_reply(c)})
+
+
+@_command({probatio.Required("type"): "yarbie/schedules/delete", probatio.Required("schedule_id"): int})
+async def ws_schedule_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    c = _coordinator(hass, msg)
+    await c.async_delete_schedule(msg["schedule_id"])
+    connection.send_result(msg["id"], {"deleted": msg["schedule_id"], **_schedules_reply(c)})
+
+
 @_command({probatio.Required("type"): "yarbie/areas/list"})
 async def ws_areas(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The work areas by id and name, for cards that need no geometry."""
@@ -411,7 +484,8 @@ def ws_job_subscribe(
 
 COMMANDS = (
     ws_info, ws_map, ws_preview, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
-    ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_areas, ws_area_params,
+    ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_schedules,
+    ws_schedule_save, ws_schedule_delete, ws_areas, ws_area_params,
     ws_area_params_save, ws_runs, ws_run, ws_route_start, ws_job_get, ws_job_subscribe,
 )
 

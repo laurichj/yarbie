@@ -2,3 +2,4 @@
 // page (HA's extra modules), like the strategy, so nothing heavy is imported here.
 
 import "./plansCard";
+import "./schedulesCard";

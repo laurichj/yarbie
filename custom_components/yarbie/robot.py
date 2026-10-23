@@ -15,7 +15,7 @@ from typing import Any
 from ._vendor.yarbo_local import FakeTransport, Simulator, YarboRobot
 from ._vendor.yarbo_local.exceptions import CommandError
 from ._vendor.yarbo_local.feedback import PlanFeedback
-from ._vendor.yarbo_local.models import PlanSummary, RobotState
+from ._vendor.yarbo_local.models import PlanSummary, RobotState, Schedule
 from ._vendor.yarbo_local.simulator import MOWER_AREA_PARAMS_DEFAULT
 from .editor import demo
 
@@ -115,6 +115,7 @@ class Robot:
             snapshot=demo.snapshot(),
             plans=demo.plans(),
             site_map=demo.site_map(),
+            schedules=demo.schedules(),
         )
         # Keep new ids clear of the demo's own (the real robot counts on from its last).
         sim.next_object_id = 100
@@ -169,6 +170,9 @@ class Robot:
 
     async def plans(self) -> list[PlanSummary]:
         return await self.robot.plans()
+
+    async def schedules(self) -> list[Schedule]:
+        return await self.robot.schedules()
 
     async def mower_area_params(self, area_id: int) -> dict[str, Any] | None:
         return await self.robot.mower_area_params(area_id)
@@ -286,6 +290,13 @@ class Robot:
 
     async def delete_plan(self, plan_id: int) -> None:
         await self.robot.delete_plan(plan_id)
+
+    async def save_schedule(self, **fields: Any) -> Schedule:
+        """The keywords of yarbo-local's ``save_schedule``; the numbers go as given."""
+        return await self.robot.save_schedule(**fields)
+
+    async def delete_schedule(self, schedule_id: int) -> None:
+        await self.robot.delete_schedule(schedule_id)
 
     async def update_mower_area_params(self, area_id: int, changes: dict[str, Any]) -> dict[str, Any]:
         return await self.robot.update_mower_area_params(area_id, **changes)

@@ -63,12 +63,19 @@ function a(e, a, o) {
 		...d ? { entity: d } : {},
 		grid_options: { columns: 12 }
 	});
-	let g = [{
+	let g = s.get("schedules");
+	p.push({
+		type: "custom:yarbie-schedules-card",
+		...h,
+		...g ? { entity: g } : {},
+		grid_options: { columns: 12 }
+	});
+	let _ = [{
 		type: "heading",
 		heading: "Yard",
 		heading_style: "title"
 	}];
-	f && g.push({
+	f && _.push({
 		type: "picture-entity",
 		entity: f,
 		show_name: !1,
@@ -78,7 +85,7 @@ function a(e, a, o) {
 			navigation_path: t
 		},
 		grid_options: { columns: 12 }
-	}), g.push({
+	}), _.push({
 		type: "button",
 		name: "Open Yard editor",
 		icon: "mdi:map-marker-path",
@@ -91,7 +98,7 @@ function a(e, a, o) {
 			columns: 12,
 			rows: 1
 		}
-	}), g.push({
+	}), _.push({
 		type: "heading",
 		heading: "Controls",
 		heading_style: "subtitle"
@@ -101,28 +108,28 @@ function a(e, a, o) {
 		"lights",
 		"refresh_map"
 	]));
-	let _ = [
+	let v = [
 		u,
 		s.get("plan_event"),
 		s.get("error"),
 		s.get("charging")
-	].filter((e) => !!e), v = [{
+	].filter((e) => !!e), y = [{
 		type: "heading",
 		heading: "Recent",
 		heading_style: "title"
 	}];
-	_.length && v.push({
+	v.length && y.push({
 		type: "logbook",
-		target: { entity_id: _ },
+		target: { entity_id: v },
 		hours_to_show: 48,
 		grid_options: { columns: 12 }
 	});
-	let y = s.get("battery");
-	return y && v.push({
+	let b = s.get("battery");
+	return b && y.push({
 		type: "history-graph",
 		title: "Battery",
 		hours_to_show: 48,
-		entities: [{ entity: y }],
+		entities: [{ entity: b }],
 		grid_options: { columns: 12 }
 	}), {
 		title: o > 1 ? l : "Yard",
@@ -137,11 +144,11 @@ function a(e, a, o) {
 			},
 			{
 				type: "grid",
-				cards: g
+				cards: _
 			},
 			{
 				type: "grid",
-				cards: v
+				cards: y
 			}
 		]
 	};

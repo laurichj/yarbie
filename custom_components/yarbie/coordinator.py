@@ -19,10 +19,11 @@ from homeassistant.helpers.event import async_call_later, async_track_time_inter
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from . import schedules
 from ._vendor.yarbo_local.exceptions import YarboError
 from ._vendor.yarbo_local.feedback import PlanFeedback
 from ._vendor.yarbo_local.lifecycle import LifecycleEvent, PlanTracker
-from ._vendor.yarbo_local.models import PlanSummary, RobotState, local_to_wgs84
+from ._vendor.yarbo_local.models import PlanSummary, RobotState, Schedule, local_to_wgs84
 from .const import (
     CONF_ACCEPTED_FIRMWARE,
     DOMAIN,
@@ -39,7 +40,7 @@ from .const import (
 )
 from .editor import runs
 from .editor.backups import BackupStore
-from .editor.service import MapService, ReadOnlyError
+from .editor.service import ConflictError, MapService, ReadOnlyError
 from .jobs import Jobs
 from .robot import Robot
 from .runlog import DEFAULT_RETENTION_DAYS, RunLog, RunRecorder
@@ -54,7 +55,8 @@ MAP_COMMANDS = frozenset(
         "del_sidewalk", "save_clean_area", "del_clean_area", "save_charging_point",
     }
 )
-PLAN_COMMANDS = frozenset({"save_plan", "del_plan", "sort_plan"})
+# Deleting a plan deletes its schedules too, so either kind means reading both again.
+PLAN_COMMANDS = frozenset({"save_plan", "del_plan", "sort_plan", "save_schedule", "del_schedule"})
 
 type YarbieConfigEntry = ConfigEntry[YarbieCoordinator]
 
@@ -90,6 +92,7 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
             robot, BackupStore(self.storage_dir), self.lock, self.check_writes
         )
         self.plans: list[PlanSummary] = []
+        self.schedules: list[Schedule] = []
         self.selected_plan: str | None = None  # the plan select's choice, by name
         self.feedback: PlanFeedback | None = None
         self.map_stale = True
@@ -190,6 +193,7 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         try:
             await self.robot.snapshot()
             self.plans = await self.robot.plans()
+            self.schedules = await self.robot.schedules()
         except (YarboError, TimeoutError) as err:
             _LOGGER.warning("first read from the robot failed: %s", err)
         self.check_firmware()
@@ -355,12 +359,33 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         return "a Home Assistant automation" if context.parent_id else "Home Assistant"
 
     async def _refresh_plans(self, _now: Any = None) -> None:
+        """The plans and their schedules."""
         try:
             self.plans = await self.robot.plans()
+            self.schedules = await self.robot.schedules()
         except (YarboError, TimeoutError) as err:
             _LOGGER.debug("reading plans failed: %s", err)
             return
         self.async_update_listeners()
+
+    # -- schedules
+
+    async def async_save_schedule(self, **fields: Any) -> Schedule:
+        """Store a schedule under the write rails; the numbers are sent as given."""
+        stored = await self.service.save_schedule(**fields)
+        await self._refresh_plans()
+        return stored
+
+    async def async_delete_schedule(self, schedule_id: int) -> None:
+        await self.service.delete_schedule(schedule_id)
+        await self._refresh_plans()
+
+    async def async_enable_schedule(self, schedule_id: int, enabled: bool) -> None:
+        """Turn a schedule on or off: the robot's record sent back with only that changed."""
+        current = next((s for s in self.schedules if s.id == schedule_id), None)
+        if current is None:
+            raise LookupError(f"the robot has no schedule {schedule_id}")
+        await self.async_save_schedule(**{**schedules.fields(current), "enabled": enabled})
 
     async def _keep_awake(self, _now: Any) -> None:
         try:
@@ -407,6 +432,15 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         if position is None or ref is None:
             return None
         return local_to_wgs84(ref, position[0], position[1])
+
+    async def run_write(self, coro_fn: Callable[[], Any]) -> None:
+        """A settings write from an entity (the rails are checked inside), errors as HA errors."""
+        try:
+            await coro_fn()
+        except (ReadOnlyError, ConflictError, LookupError, ValueError) as err:
+            raise HomeAssistantError(str(err)) from err
+        except (YarboError, TimeoutError) as err:
+            raise HomeAssistantError(f"robot: {err}") from err
 
     async def run_control(self, coro_fn: Callable[[], Any]) -> None:
         """A control (start, pause, lights...) with errors as HA errors."""

@@ -127,6 +127,11 @@
         "name": "Refresh map"
       }
     },
+    "calendar": {
+      "schedules": {
+        "name": "Schedules"
+      }
+    },
     "device_tracker": {
       "position": {
         "name": "Position"
@@ -265,6 +270,9 @@
       },
       "child_lock": {
         "name": "Child lock"
+      },
+      "schedule": {
+        "name": "Schedule {name}"
       }
     }
   },

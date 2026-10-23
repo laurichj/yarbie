@@ -11,6 +11,7 @@ from . import diff, heatmap, mapdoc
 from .backups import BackupStore
 
 if TYPE_CHECKING:
+    from .._vendor.yarbo_local.models import Schedule
     from ..robot import Robot
 
 
@@ -171,6 +172,18 @@ class MapService:
         async with self.lock:
             self._check_idle()
             await self.robot.delete_plan(plan_id)
+
+    async def save_schedule(self, **fields: Any) -> Schedule:
+        self._check_writes()
+        async with self.lock:
+            self._check_idle()
+            return await self.robot.save_schedule(**fields)
+
+    async def delete_schedule(self, schedule_id: int) -> None:
+        self._check_writes()
+        async with self.lock:
+            self._check_idle()
+            await self.robot.delete_schedule(schedule_id)
 
     async def update_mower_area_params(self, area_id: int, changes: dict[str, Any]) -> dict[str, Any]:
         self._check_writes()

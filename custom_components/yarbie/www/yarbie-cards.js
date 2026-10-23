@@ -265,3 +265,188 @@ a("yarbie-plans-card", class extends n {
 	}
 }, "Yarbo plans", "The robot's plans: create, edit (areas and their order), delete and start them.");
 //#endregion
+//#region src/schedulesCard.ts
+var o = [
+	"Mon",
+	"Tue",
+	"Wed",
+	"Thu",
+	"Fri",
+	"Sat",
+	"Sun"
+];
+function s(e) {
+	if (e === null || e <= 0) return "no day";
+	let t = o.filter((t, n) => e & 1 << n);
+	return t.length ? t.join(", ") : "no day";
+}
+var c = (e) => e.slice(0, 5);
+a("yarbie-schedules-card", class extends n {
+	#e = null;
+	#t = null;
+	#n = null;
+	#r = !1;
+	static getStubConfig() {
+		return { type: "custom:yarbie-schedules-card" };
+	}
+	editing() {
+		return this.#t !== null;
+	}
+	async load() {
+		if (!this.isAdmin) this.#n = "Only administrators can manage schedules.", this.render();
+		else {
+			try {
+				this.#e = await this.ws("schedules/list"), this.#n = null;
+			} catch (e) {
+				this.#n = r(e);
+			}
+			await this.refreshWrites();
+		}
+	}
+	render() {
+		let t = this.shadowRoot, n;
+		if (this.#n) n = `<p class="hint">${e(this.#n)}</p>`;
+		else if (!this.#e) n = "<p class=\"hint\">Reading the schedules…</p>";
+		else {
+			let t = this.refusal(), r = t || this.#r || this.#t ? "disabled" : "";
+			n = `<p class="hint unconfirmed">Unconfirmed: what the robot does with <code>week_day</code>,
+          <code>schedule_type</code> and <code>return_method</code> when a schedule fires is not known yet
+          (only a disabled schedule has been tried on a real robot). They are shown and sent as the robot's
+          own numbers; captures from the Yarbo app are still needed.</p>
+        <ul class="list">${this.#e.schedules.length ? this.#e.schedules.map((t) => `<li>
+                <div><b>${e(t.name || `Schedule ${t.id}`)}</b>
+                  <div class="meta">${e(t.plan ?? `plan ${t.plan_id}`)} · ${e(c(t.start_time))}–${e(c(t.end_time))}
+                    · week_day ${e(t.week_day)} <span class="unconfirmed" title="${e(this.#e.reading)}">(${e(s(t.week_day))}?)</span></div></div>
+                <span class="buttons">
+                  <label class="check" title="On or off (sent to the robot)"><input type="checkbox" data-toggle="${t.id}" data-write ${t.enabled ? "checked" : ""} ${r}/></label>
+                  <button data-edit="${t.id}" ${this.#t ? "disabled" : ""}>Edit</button>
+                </span>
+              </li>`).join("") : "<li class=\"meta\">No schedules.</li>"}</ul>
+        ${this.#t ? this.#i() : `<div class="row"><button data-new data-write ${t || !this.#e.plans.length ? "disabled" : ""}>Add schedule</button>
+                <button data-reload title="Read the schedules from the robot again">↻</button></div>`}`;
+		}
+		t.innerHTML = this.frame("Schedules", n), this.#a();
+	}
+	#i() {
+		let t = this.#t, n = this.#e, r = this.refusal() || this.#r ? "disabled" : "", i = o.map((e, n) => `<label class="check"><input type="checkbox" data-day="${n}" ${t.week_day & 1 << n ? "checked" : ""}/> ${e}</label>`).join(""), a = n.defaults;
+		return `<div class="form">
+      <h3>${t.schedule_id === null ? "New schedule" : "Edit schedule"}</h3>
+      <label class="field">Name<input type="text" id="name" value="${e(t.name)}" /></label>
+      <label class="field">Plan<select id="plan">${n.plans.map((n) => `<option value="${n.id}" ${n.id === t.plan_id ? "selected" : ""}>${e(n.name)}</option>`).join("")}</select></label>
+      <div class="row">
+        <label class="field">Start<input type="time" id="start" value="${e(c(t.start_time))}" /></label>
+        <label class="field">End<input type="time" id="end" value="${e(c(t.end_time))}" /></label>
+      </div>
+      <p class="hint">Times are sent as written. Whether the robot reads them as local time or UTC is not known.</p>
+      <fieldset><legend>Days</legend>
+        <label class="field">week_day (the robot's number)<input type="number" id="week_day" min="0" step="1" value="${t.week_day}" /></label>
+        <div class="days">${i}</div>
+        <p class="hint unconfirmed">Unconfirmed: the day boxes read week_day as a bitmask with Monday as 1,
+          Tuesday 2, Wednesday 4…, as the calendar does. It may instead be a single day. The app sent ${a.week_day}.</p>
+      </fieldset>
+      <fieldset><legend>When it fires (meanings unconfirmed)</legend>
+        <label class="field">return_method <span class="unconfirmed">meaning not known; the app sent ${a.return_method}</span>
+          <input type="number" id="return_method" min="0" step="1" value="${t.return_method}" /></label>
+        <label class="field">schedule_type <span class="unconfirmed">meaning not known; the app sent ${a.schedule_type}</span>
+          <input type="number" id="schedule_type" min="0" step="1" value="${t.schedule_type}" /></label>
+        <label class="check"><input type="checkbox" id="resume" ${t.resume_progress ? "checked" : ""}/> Resume from last progress
+          <span class="meta">(<code>enable_last_progress</code>)</span></label>
+      </fieldset>
+      <label class="check"><input type="checkbox" id="enabled" ${t.enabled ? "checked" : ""}/> On</label>
+      <div class="row">
+        <button class="primary" data-save data-write ${r}>Save to robot</button>
+        ${t.schedule_id === null ? "" : `<button class="danger" data-delete data-write ${r}>Delete</button>`}
+        <button data-cancel>Cancel</button>
+      </div>
+    </div>`;
+	}
+	#a() {
+		let e = this.shadowRoot, t = (t, n) => e.querySelectorAll(t).forEach((e) => e.addEventListener("click", () => n(e)));
+		t("button[data-reload]", () => void this.load()), t("button[data-new]", () => this.#o(null)), t("button[data-edit]", (e) => this.#o(this.#e?.schedules.find((t) => t.id === Number(e.dataset.edit)) ?? null)), e.querySelectorAll("input[data-toggle]").forEach((e) => e.addEventListener("change", () => void this.#l(Number(e.dataset.toggle), e.checked)));
+		let n = this.#t;
+		if (!n) return;
+		let r = (t) => e.querySelector(`#${t}`);
+		r("name").addEventListener("input", () => n.name = r("name").value), e.querySelector("#plan").addEventListener("change", (e) => n.plan_id = Number(e.target.value)), r("start").addEventListener("change", () => n.start_time = `${r("start").value}:00`), r("end").addEventListener("change", () => n.end_time = `${r("end").value}:00`), r("return_method").addEventListener("change", () => n.return_method = Number(r("return_method").value)), r("schedule_type").addEventListener("change", () => n.schedule_type = Number(r("schedule_type").value)), r("resume").addEventListener("change", () => n.resume_progress = r("resume").checked), r("enabled").addEventListener("change", () => n.enabled = r("enabled").checked), r("week_day").addEventListener("change", () => {
+			n.week_day = Math.max(0, Math.trunc(Number(r("week_day").value) || 0)), e.querySelectorAll("input[data-day]").forEach((e) => e.checked = !!(n.week_day & 1 << Number(e.dataset.day)));
+		}), e.querySelectorAll("input[data-day]").forEach((e) => e.addEventListener("change", () => {
+			let t = 1 << Number(e.dataset.day);
+			n.week_day = e.checked ? n.week_day | t : n.week_day & ~t, r("week_day").value = String(n.week_day);
+		})), t("button[data-cancel]", () => {
+			this.#t = null, this.say(""), this.load();
+		}), t("button[data-save]", () => void this.#s()), t("button[data-delete]", (e) => {
+			e.classList.contains("confirm") ? this.#c() : (e.classList.add("confirm"), e.textContent = "Confirm delete");
+		});
+	}
+	#o(e) {
+		let t = this.#e.defaults;
+		this.#t = e ? {
+			schedule_id: e.id,
+			name: e.name,
+			plan_id: e.plan_id,
+			start_time: e.start_time,
+			end_time: e.end_time,
+			week_day: e.week_day ?? t.week_day,
+			schedule_type: e.schedule_type ?? t.schedule_type,
+			return_method: e.return_method ?? t.return_method,
+			enabled: e.enabled,
+			resume_progress: e.resume_progress
+		} : {
+			schedule_id: null,
+			name: "",
+			plan_id: this.#e.plans[0]?.id ?? null,
+			start_time: "09:00:00",
+			end_time: "11:00:00",
+			...t,
+			enabled: !0,
+			resume_progress: !1
+		}, this.say(""), this.render(), this.shadowRoot.querySelector("#name")?.focus();
+	}
+	async #s() {
+		let e = this.#t;
+		if (!e) return;
+		let t = e.name.trim();
+		if (!t || e.plan_id === null) return this.say("A schedule needs a name and a plan.", "error");
+		let { schedule_id: n, ...r } = e;
+		await this.#u(async () => (await this.ws("schedules/save", {
+			...r,
+			name: t,
+			...n === null ? {} : { schedule_id: n }
+		}), "Schedule saved."));
+	}
+	async #c() {
+		let e = this.#t?.schedule_id;
+		e != null && await this.#u(async () => (await this.ws("schedules/delete", { schedule_id: e }), "Schedule deleted."));
+	}
+	async #l(e, t) {
+		let n = this.#e?.schedules.find((t) => t.id === e);
+		n && n.plan_id !== null && await this.#u(async () => (await this.ws("schedules/save", {
+			schedule_id: n.id,
+			name: n.name || `Schedule ${n.id}`,
+			plan_id: n.plan_id,
+			start_time: n.start_time,
+			end_time: n.end_time,
+			week_day: n.week_day ?? this.#e.defaults.week_day,
+			schedule_type: n.schedule_type ?? this.#e.defaults.schedule_type,
+			return_method: n.return_method ?? this.#e.defaults.return_method,
+			resume_progress: n.resume_progress,
+			enabled: t
+		}), `${n.name || "Schedule"} turned ${t ? "on" : "off"}.`));
+	}
+	async #u(e) {
+		this.#r = !0, this.render();
+		try {
+			let t = await e();
+			this.#t = null, this.message = {
+				text: t,
+				kind: "ok"
+			};
+		} catch (e) {
+			this.message = {
+				text: r(e),
+				kind: "error"
+			};
+		}
+		this.#r = !1, await this.load();
+	}
+}, "Yarbo schedules", "The robot's schedules: add, edit, turn on or off and delete them (field meanings still unconfirmed).");
+//#endregion

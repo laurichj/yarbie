@@ -119,6 +119,31 @@ def plans() -> list[dict[str, Any]]:
     ]
 
 
+def schedules() -> list[dict[str, Any]]:
+    """One schedule with the numbers the app sent (3, 1, 2: their meanings are not known),
+    shaped like the robot's stored record."""
+    return [
+        {
+            "id": 1,
+            "plan_id": 2,
+            "name": "Front lawn mornings",
+            "enable": True,
+            "start_time": "09:00:00",
+            "end_time": "11:00:00",
+            "week_day": 1,
+            "schedule_type": 3,
+            "return_method": 2,
+            "enable_last_progress": False,
+            "last_progress": 0,
+            "completed_this_window": False,
+            "interval_time": 0,
+            "is_weather_schedule": 0,
+            "times": 0,
+            "timezone": "",
+        }
+    ]
+
+
 def snapshot() -> dict[str, Any]:
     """Just enough of ``get_device_msg`` for the session and the status bar."""
     return {
