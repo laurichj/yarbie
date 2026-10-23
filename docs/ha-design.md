@@ -28,6 +28,11 @@ Done on branch `feature/plans-schedules-areas` (checked with the simulator):
   numbers mean is still unconfirmed; step 1 of TODO 4 (captures from the app) is open.
 - The Area settings view (TODO 5): a table of every area's settings, set in bulk.
 
+Done on branch `editor-scope` (checked with the simulator):
+
+- The Yard editor keeps to editing the map (TODO 6). Area settings, runs, the route
+  preview, the current run and the wear map moved to the Yarbo dashboard's cards.
+
 Where the build differs from the plan below:
 
 - **Vendoring layout.** The subtree holds the whole upstream repo at
@@ -52,7 +57,7 @@ Where the build differs from the plan below:
 - **No wireless charger output sensors yet.** The scale of those fields is unresolved in
   the field map.
 - **Plans are edited on the dashboard**, not in the panel's Plans tab (TODO 3). The
-  panel keeps the route preview.
+  route preview moved there too, to the yard card (TODO 6).
 - **Plan writes check the busy state too.** Before, only map and settings writes did,
   although the README said all three.
 - **The cards load like the strategy:** `www/yarbie-cards.js`, added with
@@ -60,6 +65,9 @@ Where the build differs from the plan below:
   swapping in its polyfilled element registry. They call the admin-only websocket
   commands, so for other users they say only administrators can manage plans. Start
   goes through the `yarbie.start_plan` action, open to every user.
+- **The dashboard's reads are open to every user** (TODO 6): the map, area settings,
+  runs, progress, wear and the plan list. Writes, route previews (they ask the robot),
+  backups and the imagery list (it carries the Google key) stay admin-only.
 
 Not done yet:
 
@@ -259,26 +267,28 @@ Mockups: `mockups/03-editor-changes.png`, `mockups/04-plans-route-preview.png`,
   already built in.
 - Imagery alignment offset, as today.
 
-**Tools:** select, no-go zone, pathway, sidewalk, reshape area, undo, route, wear, backups.
+**Tools:** select, no-go zone, pathway, sidewalk, reshape area, undo, smoothing, backups.
 
 **Drawer tabs:**
 - **Changes**:
   - The diff list, with the reason for any change that can't be sent.
   - The dock-link (WP005) warning.
   - Discard, and the two-click "Confirm: send N changes".
-- **Selected**: name, on/off state and geometry details for the selected feature.
-- **Plans**: the plans with **Route** (the route preview, with the plan's areas outlined)
-  and a link to the Yarbo dashboard, where plans are edited (TODO 3).
-- **Areas**: name, mowing pattern, cutting height, edge passes and speed (the verified
-  mower area params), plus the wear summary, and a link to the Area settings view.
-- **Area settings** (a view of its own, from the header): every area's settings in one
-  table (TODO 5).
-- **Runs**: see TODO 1.
+- **Selected**: name, on/off state and geometry details for the selected feature,
+  smoothing, and for an area a link to its mowing settings on the dashboard.
+- **History**: map backups, each one revertible.
+- **View**: layers, imagery and its alignment.
+
+Everything else is on the Yarbo dashboard (TODO 6): plans and schedules (TODO 3, 4),
+the Area settings view (TODO 5), runs (TODO 1), and the yard card with the route preview,
+the current run and the wear map.
 
 ### Websocket API
 
-Every command checks for an admin user. Every write records `connection.user.name` as the
-actor.
+Writes, route previews, backups and the imagery list check for an admin user; the reads
+the dashboard cards show (info, map, progress, heatmap, plans, areas, area settings and
+params, runs) are open to every user (TODO 6). Every write records
+`connection.user.name` as the actor.
 
 | Command | Replaces |
 |---|---|
@@ -567,7 +577,7 @@ not known. The app sent 3, 1 and 2.
 - **Rain:** whether to skip a scheduled run when it is raining, as an option, which needs
   the rain-pause blueprint's logic at start time.
 
-### 5. Area settings: a bulk editor (done)
+### 5. Area settings: a bulk editor (done; moved to the dashboard in TODO 6)
 
 Asked for: "something like a spreadsheet where I can set a subset of area configuration
 options to all or some areas at the same time in order to easily keep them in sync."
@@ -609,7 +619,46 @@ table of 30 columns needs.
 - Not built: restoring from an area settings backup (the file holds what is needed; the
   map History lists only map backups).
   
-### 6. Keep the Yard editor to editing the map
+### 6. Keep the Yard editor to editing the map (done)
+
+Built on `editor-scope`, checked in a local HA 2026.10.2 with the simulator:
+- **Area settings** is the dashboard's "Area settings" view: a `panel` view the strategy
+  adds per robot (`area-settings`, or `<device id>-area-settings` with several robots),
+  holding `custom:yarbie-area-settings-card` (`areaSettingsCard.ts`). `areaTable.ts` is now
+  a class the card hosts in its shadow root. A second tab, **One area**, is the
+  single-area form with the area picked.
+- **Runs** is `custom:yarbie-runs-card` (`runsCard.ts`) in the Recent column, under a
+  **Last run** tile that opens the newest finished run.
+- **`custom:yarbie-yard-card`** (`yardCard.ts`) replaces the map image on the Yarbo
+  dashboard, with layers to switch on: the current run (on by default while the robot is
+  in a plan, polled every 10 s), the wear map, a route preview (admins), and the run
+  picked on the runs card.
+- **The editor** keeps the drawing tools, Selected, Changes, History, smoothing, imagery
+  and alignment, and the robot's position. An area's mowing settings are a link
+  (`?area=<id>` on the Area settings view); a hint under Imagery links the dashboard.
+- **Code layout:** `yardMap.ts` holds the photo sources, the alignment, and the layers both
+  draw; `main.ts` and `yardView.ts` import it. `yardView.ts` is the yard card's map, a
+  chunk `yardCard.ts` imports when the card first comes on screen, so the cards bundle
+  every page loads has no MapLibre. The alignment and photo choice are kept in browser
+  storage under the same keys as before, so the card shows what the editor was set to.
+
+Where it differs from the plan:
+- **Reads opened to every user.** Dashboards are seen by non-admins, so the commands the
+  cards read with no longer require an admin (see the websocket API above). The imagery
+  list does, since its tile URL carries the Google key: non-admins see the free photos.
+- **The single-area form sends through `yarbie/area_settings/apply`**, not
+  `area_params/save`, so it gets the same rails, backup and notification as the table.
+  It also sets the mowing pattern; the editor's Selected no longer has a pattern picker
+  (the change list still sends a pattern from an imported map).
+- **Links:** `?area=<id>` (Area settings view), `?run=<key>` or `?run=last`, and
+  `?plan=<id>` (runs card) select on the cards; the runs card keeps them in the address.
+  The device page cannot link anywhere (HA has no hook), so the **last run** sensor gains
+  a `run` attribute with its key, for notifications and automations to build a link, and
+  the dashboard's Last run tile opens `?run=last`.
+- The cards talk to each other with a window event (`yarbie-run-shown`): picking a run
+  on the runs card shades it on the yard card.
+
+The plan as written:
 
 Builds on #5 (plan and schedule cards, and TODO 5: the Area settings table), which
 adds the cards and the view this moves.
