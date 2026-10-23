@@ -78,11 +78,12 @@ export function read(params: Params, path: string): unknown {
   return sub ? (value as Params | undefined)?.[sub] : value;
 }
 
-function input(field: Field, value: unknown): string {
+function input(field: Field, value: unknown, readOnly = false): string {
   const title = `robot field: ${field.path}`;
+  const off = readOnly ? "disabled" : "";
   const label = `${esc(field.label)}${field.inferred ? " *" : ""}${field.unit ? ` <span class="unit">${field.unit}</span>` : ""}`;
   if (field.kind === "bool") {
-    return `<label class="check" title="${title}"><input type="checkbox" data-path="${field.path}" ${value ? "checked" : ""}/> ${label}</label>`;
+    return `<label class="check" title="${title}"><input type="checkbox" data-path="${field.path}" ${value ? "checked" : ""} ${off}/> ${label}</label>`;
   }
   const attrs = [
     field.step !== undefined ? `step="${field.step}"` : 'step="any"',
@@ -90,18 +91,24 @@ function input(field: Field, value: unknown): string {
     field.max !== undefined ? `max="${field.max}"` : "",
   ].join(" ");
   const shown = typeof value === "number" ? Number(value.toFixed(4)) : "";
-  return `<label class="field" title="${title}">${label}<input type="number" ${attrs} data-path="${field.path}" value="${shown}"/></label>`;
+  return `<label class="field" title="${title}">${label}<input type="number" ${attrs} data-path="${field.path}" value="${shown}" ${off}/></label>`;
 }
 
-/** The form: named settings by group, then everything else editable under Advanced. */
-export function settingsForm(params: Params, editable: string[], otherAreas: { id: number; name: string }[]): string {
+/** The form: named settings by group, then everything else editable under Advanced.
+ * Read-only (no save, nothing to tick) for users who may not change settings. */
+export function settingsForm(
+  params: Params,
+  editable: string[],
+  otherAreas: { id: number; name: string }[],
+  readOnly = false,
+): string {
   const named = new Set(GROUPS.flatMap((g) => g.fields.map((f) => f.path)));
   const groups = GROUPS.filter((g) => !g.when || g.when(params))
     .map((g) => {
       const fields = g.fields.filter((f) => read(params, f.path) !== undefined);
       if (!fields.length) return "";
       return `<fieldset><legend>${g.title}</legend><div class="params-grid">${fields
-        .map((f) => input(f, read(params, f.path)))
+        .map((f) => input(f, read(params, f.path), readOnly))
         .join("")}</div></fieldset>`;
     })
     .join("");
@@ -113,25 +120,28 @@ export function settingsForm(params: Params, editable: string[], otherAreas: { i
       for (const [sub, v] of Object.entries(value as Params)) {
         const path = `${key}.${sub}`;
         if (!named.has(path) && (typeof v === "number" || typeof v === "boolean")) {
-          advanced.push(input({ path, label: path, kind: typeof v === "boolean" ? "bool" : "number" }, v));
+          advanced.push(input({ path, label: path, kind: typeof v === "boolean" ? "bool" : "number" }, v, readOnly));
         }
       }
     } else if (!named.has(key) && (typeof value === "number" || typeof value === "boolean")) {
-      advanced.push(input({ path: key, label: key, kind: typeof value === "boolean" ? "bool" : "number" }, value));
+      advanced.push(input({ path: key, label: key, kind: typeof value === "boolean" ? "bool" : "number" }, value, readOnly));
     }
   }
-  return `<h2 style="margin-top:12px">Mowing settings</h2>
-    ${groups}
+  return `${groups}
     <details><summary>Advanced (raw robot fields)</summary><div class="params-grid">${advanced.join("")}</div></details>
     ${
-      otherAreas.length
-        ? `<details><summary>Also apply changes to…</summary>${otherAreas
-            .map((a) => `<label class="check"><input type="checkbox" data-also="${a.id}"/> ${esc(a.name)}</label>`)
-            .join("")}</details>`
-        : ""
-    }
-    <div class="row"><button id="params-save" class="primary" disabled>Save settings to robot</button></div>
-    <p class="hint">Saved straight to the robot, separately from map changes. * = meaning inferred from the field name.</p>`;
+      readOnly
+        ? `<p class="hint">* = meaning inferred from the field name.</p>`
+        : `${
+            otherAreas.length
+              ? `<details><summary>Also apply changes to…</summary>${otherAreas
+                  .map((a) => `<label class="check"><input type="checkbox" data-also="${a.id}"/> ${esc(a.name)}</label>`)
+                  .join("")}</details>`
+              : ""
+          }
+    <div class="row"><button id="params-save" class="primary" disabled data-write>Save settings to robot</button></div>
+    <p class="hint">Saved straight to the robot. * = meaning inferred from the field name.</p>`
+    }`;
 }
 
 /** Collect what was changed in the form, as the nested record the robot takes. */
