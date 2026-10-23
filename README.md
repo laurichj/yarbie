@@ -112,16 +112,29 @@ scripts/dev_ha.sh                          # a throwaway HA on http://127.0.0.1:
 ```
 
 In the dev HA, add yarbie with the address `simulator` for a built-in demo yard. `cd
-frontend && npm run watch` rebuilds the panel on save; restart HA to load it.
+frontend && npm run watch` rebuilds the panel on save; restart HA to load it. Without a
+build, HA runs without the panel. Each checkout or worktree gets its own `.venv-ha` and
+`.ha-dev`; to run one beside another, give it its own port on its first run:
+`HA_PORT=8124 scripts/dev_ha.sh`.
 
-Checks:
+Checks: `scripts/check.sh` runs all of CI's but hassfest and the HACS action, or one
+group of them (`python`, `frontend`, `zip`):
 
 ```sh
 .venv/bin/pytest                         # against yarbo-local's simulator
 .venv/bin/ty check custom_components tests
-(cd frontend && npm run typecheck)
+(cd frontend && npm run typecheck && npm run build)
 python3 scripts/vendor_yarbo_local.py --check
+python3 scripts/build_release_zip.py     # yarbie.zip; checks the two versions agree
 ```
+
+`check.sh zip` then runs the tests against the unzipped `yarbie.zip`. It uses `.venv`
+and `node_modules` as they are, while CI installs both from scratch, so a package only
+your venv has can pass here and fail there.
+
+To try a branch as a release would install it, download its CI run's zip
+(`gh run download <run-id> -n yarbie.zip`) and unzip it into a test HA's
+`config/custom_components/yarbie`.
 
 The built panel in `custom_components/yarbie/www/` is ignored by git; never commit it.
 Releases build it.
@@ -130,9 +143,9 @@ Releases build it.
 
 `.github/workflows/ci.yml` runs on every push and pull request, on a fresh checkout:
 
-- the checks above, plus the frontend build;
-- `scripts/build_release_zip.py`, which zips the integration exactly as a release would,
-  then the test suite against the unzipped copy (so a file missing from the zip fails);
+- the checks above;
+- `scripts/check.sh zip`: the zip a release would publish, and the test suite against the
+  unzipped copy (so a file missing from the zip fails);
 - Home Assistant's `hassfest` and the HACS validation action.
 
 Each run keeps that `yarbie.zip` as an artifact for 14 days (the run's page, Artifacts),

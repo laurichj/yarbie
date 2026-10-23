@@ -133,7 +133,7 @@ custom_components/yarbie/
   www/yarbie-panel.js                       built from frontend/; not in git
 frontend/            TypeScript source. A Vite library build writes www/
 .github/workflows/   ci.yml (every push and PR), release.yml (vX.Y.Z tags)
-scripts/             dev_ha.sh, vendor_yarbo_local.py, build_release_zip.py
+scripts/             dev_ha.sh, check.sh, vendor_yarbo_local.py, build_release_zip.py
 blueprints/automation/yarbie/
 tests/               pytest-homeassistant-custom-component, against the simulator
 hacs.json
