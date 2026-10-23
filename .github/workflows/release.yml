@@ -1,0 +1,68 @@
+# Pushing a vX.Y.Z tag runs CI and publishes its yarbie.zip on a GitHub release, which is
+# what HACS installs. Run by hand (Actions, Release, Run workflow) it is a dry run: CI and
+# the zip as a workflow artifact, no release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: Tag matches manifest.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the tag
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python3 scripts/build_release_zip.py --tag "$TAG" --check-version
+
+  ci:
+    needs: tag
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: GitHub release
+    # Only a pushed tag: a manual run is a dry run even with a tag picked as its ref.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # the previous tag, for the notes
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: yarbie.zip
+      - name: Release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          previous="$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)"
+          {
+            if [ -n "$previous" ]; then
+              echo "Changes since $previous:"
+              range="$previous..$TAG"
+            else
+              echo "Changes:"
+              range="$TAG"
+            fi
+            echo
+            git log --no-merges --format='- %s (%h)' "$range"
+            echo
+            echo "Install or update with HACS, or unzip \`yarbie.zip\` into \`config/custom_components/yarbie\`."
+          } > notes.md
+          cat notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" yarbie.zip --title "yarbie ${TAG#v}" --notes-file notes.md --verify-tag
