@@ -100,6 +100,10 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         self.selected_plan: str | None = None  # the plan select's choice, by name
         self.feedback: PlanFeedback | None = None
         self.map_stale = True
+        # What the dashboard's cards last read, served to users who are not admins (and,
+        # for progress, to everyone for a few seconds) so viewers do not each ask the robot.
+        self.area_settings_read: list[dict[str, Any]] | None = None
+        self.progress_read: tuple[float, dict[str, Any]] | None = None
         self.tracker = PlanTracker()
         self._tracker_store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.runs"

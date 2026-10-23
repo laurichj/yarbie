@@ -5,7 +5,6 @@ export const LAYOUT = `
       <aside id="panel">
         <header>
           <h1>Yard editor</h1>
-          <button id="open-area-settings" title="Every area's mowing settings side by side, to change several at once">Area settings</button>
           <span id="status" class="pill">connecting…</span>
         </header>
         <div id="demo-banner" class="banner" hidden>
@@ -15,12 +14,7 @@ export const LAYOUT = `
 
         <section>
           <label class="field" style="margin:0">Imagery<select id="imagery"></select></label>
-        </section>
-
-        <section id="run-section" hidden>
-          <h2>Current run</h2>
-          <label class="check"><input type="checkbox" id="run-on" checked /> Show what has been mowed</label>
-          <div id="run-info" class="hint"></div>
+          <p class="hint" id="dashboard-hint"></p>
         </section>
 
         <section>
@@ -68,36 +62,7 @@ export const LAYOUT = `
         </section>
 
         <section>
-          <h2>Plans</h2>
-          <ul id="plans" class="plans"></ul>
-          <p class="hint" id="plans-hint">Plans are created and edited on the Yarbo dashboard. Here you can see the route the robot would take.</p>
-        </section>
-
-        <section>
-          <h2>Runs</h2>
-          <div class="row" style="margin-top:0">
-            <select id="runs-plan"><option value="">All plans</option></select>
-            <button id="runs-refresh" title="Read the run history from the robot again">↻</button>
-          </div>
-          <ul id="runs" class="plans runs"></ul>
-          <div id="run-detail" hidden></div>
-        </section>
-
-        <section>
           <h2>View</h2>
-          <div class="heat">
-            <label class="check"><input type="checkbox" id="heat-on" /> Wear heat map (estimated)</label>
-            <div class="row" style="margin-top:0">
-              <select id="heat-days">
-                <option value="0">All history</option>
-                <option value="365">Last year</option>
-                <option value="90">Last 90 days</option>
-                <option value="30">Last 30 days</option>
-              </select>
-              <button id="heat-refresh" title="Read the run history from the robot again">↻</button>
-            </div>
-            <div id="heat-info" class="hint"></div>
-          </div>
           <div id="layers" class="layers"></div>
           <div class="nudge">
             <span>Imagery alignment</span>
@@ -108,20 +73,10 @@ export const LAYOUT = `
             </div>
             <span id="offset" class="hint">0.00 m E, 0.00 m N</span>
           </div>
-          <p class="hint">Satellite photos are often 1–3 m off from RTK. Alignment only moves what you see; it is never sent to the robot.</p>
+          <p class="hint">Satellite photos are often 1–3 m off from RTK. Alignment only moves what you see; it is never sent to the robot. The dashboard's yard map uses the same photo and alignment.</p>
         </section>
         <footer id="message" role="status"></footer>
       </aside>
       <div id="map"></div>
-    </div>
-    <div id="area-view" hidden>
-      <header>
-        <button id="area-back">← Map</button>
-        <h1>Area settings</h1>
-        <span class="hint">Every work area's mowing settings. Select areas, set a value on all of them, review, then send.</span>
-      </header>
-      <p id="area-rails" class="banner" hidden></p>
-      <div id="area-body"></div>
-      <footer id="area-message" role="status"></footer>
     </div>
 `;

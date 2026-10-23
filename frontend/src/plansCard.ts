@@ -1,6 +1,6 @@
 // custom:yarbie-plans-card: the robot's plans, with New, Edit (name, areas, their order),
 // Delete and Start. Plans are a robot setting, not map geometry, so they are edited here
-// beside the robot's other controls; the Yard editor keeps only the route preview.
+// beside the robot's other controls; the yard card previews their routes.
 
 import { YarbieCard, defineCard, errorText, esc } from "./cardBase";
 import type { Plan } from "./api";
@@ -81,7 +81,7 @@ class YarbiePlansCard extends YarbieCard {
         : `<li class="meta">No plans yet.</li>`;
       body = `<ul class="list">${rows}</ul>
         ${this.#draft ? this.#form() : `<div class="row"><button data-new data-write ${refusal ? "disabled" : ""}>New plan</button>
-          <a data-editor class="hint">Preview a route in the Yard editor</a></div>`}`;
+          <span class="hint">The yard map card previews a plan's route.</span></div>`}`;
     }
     root.innerHTML = this.frame("Plans", body);
     this.#wire();
@@ -133,7 +133,6 @@ class YarbiePlansCard extends YarbieCard {
       if (plan) this.#open({ id: plan.id, name: plan.name, area_ids: [...plan.area_ids] });
     });
     on("button[data-new]", () => this.#open({ id: null, name: "", area_ids: [] }));
-    on("a[data-editor]", () => this.navigate("/yard-editor"));
     if (!this.#draft) return;
     const d = this.#draft;
     root.querySelector<HTMLInputElement>("#name")?.addEventListener("input", (e) => (d.name = (e.target as HTMLInputElement).value));

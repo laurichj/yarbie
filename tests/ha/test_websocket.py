@@ -214,13 +214,75 @@ async def test_kill_switch_refuses_writes(ws: WS) -> None:
     assert (await ws("yarbie/info"))["result"]["read_only_reason"]
 
 
-async def test_non_admins_are_refused(
+async def test_non_admins_read_but_never_write(
     hass: HomeAssistant, hass_ws_client: Any, hass_read_only_access_token: str, entry: MockConfigEntry
 ) -> None:
-    client = await hass_ws_client(hass, hass_read_only_access_token)
-    await client.send_json_auto_id({"type": "yarbie/map"})
-    reply = await client.receive_json()
-    assert reply["error"]["code"] == "unauthorized"
+    """The dashboard cards show every user the map, area settings and runs; anything that
+    changes the robot, asks it for a route, or reveals the imagery key stays admin-only."""
+    ws = WS(await hass_ws_client(hass, hass_read_only_access_token))
+    body = await _map(ws)
+    for read in ("yarbie/info", "yarbie/areas/list", "yarbie/area_settings/get", "yarbie/runs/list", "yarbie/progress", "yarbie/plans/list"):
+        reply = await ws(read)
+        assert reply["success"], (read, reply)
+    area = next(f["properties"]["id"] for f in body["features"]["features"] if f["properties"]["family"] == "areas")
+
+    writes: list[tuple[str, dict[str, Any]]] = [
+        ("yarbie/apply", {"features": body["features"], "revision": body["revision"]}),
+        ("yarbie/preview", {"features": body["features"]}),
+        ("yarbie/area_settings/apply", {"changes": [{"area_id": area, "params": {"edge_circles": 2}}]}),
+        ("yarbie/area_params/get", {"area_id": area}),
+        ("yarbie/area_params/save", {"area_id": area, "changes": {"edge_circles": 2}}),
+        ("yarbie/plans/save", {"name": "x", "area_ids": [area]}),
+        ("yarbie/route/start", {"plan_id": 1}),
+        ("yarbie/imagery", {}),
+        ("yarbie/backups/list", {}),
+    ]
+    for type_, data in writes:
+        reply = await ws(type_, **data)
+        assert reply["error"]["code"] == "unauthorized", (type_, reply)
+
+
+async def test_info_names_the_device(hass: HomeAssistant, ws: WS, entry: MockConfigEntry) -> None:
+    """The editor links to the robot's dashboard views, which are named by device."""
+    from homeassistant.helpers import device_registry as dr
+
+    info = (await ws("yarbie/info"))["result"]
+    device = dr.async_get(hass).async_get(info["device_id"])
+    assert device is not None and device.config_entry_id == entry.entry_id
+
+
+async def test_non_admins_get_what_was_last_read(
+    hass: HomeAssistant, ws: WS, hass_ws_client: Any, hass_read_only_access_token: str, entry: MockConfigEntry
+) -> None:
+    """Viewers of the dashboard do not make the robot be asked again: they get the last
+    reading, which an admin's change clears."""
+    c = entry.runtime_data
+    viewer = WS(await hass_ws_client(hass, hass_read_only_access_token))
+    asked: list[str] = []
+    real_settings, real_runs = c.service.area_settings, c.async_runs
+
+    async def settings() -> Any:
+        asked.append("settings")
+        return await real_settings()
+
+    async def runs(refresh: bool = False) -> Any:
+        asked.append(f"runs refresh={refresh}")
+        return await real_runs(refresh)
+
+    c.service.area_settings, c.async_runs = settings, runs
+    first = (await viewer("yarbie/area_settings/get"))["result"]["areas"]
+    again = (await viewer("yarbie/area_settings/get"))["result"]["areas"]
+    assert again == first and asked == ["settings"]
+    area = first[0]["id"]
+    reply = await ws("yarbie/area_settings/apply", changes=[{"area_id": area, "params": {"edge_circles": 3}}])
+    assert reply["success"], reply
+    fresh = (await viewer("yarbie/area_settings/get"))["result"]["areas"]
+    assert next(a for a in fresh if a["id"] == area)["params"]["edge_circles"] == 3
+
+    asked.clear()
+    assert (await viewer("yarbie/runs/list", refresh=True))["success"]
+    assert (await ws("yarbie/runs/list", refresh=True))["success"]
+    assert asked == ["runs refresh=False", "runs refresh=True"]
 
 
 def test_finished_parts_from_records_and_bare_ids() -> None:

@@ -63,7 +63,7 @@ class YarbieMower(YarbieEntity, LawnMowerEntity):
             return
         plan_id = self.coordinator.selected_plan_id()
         if plan_id is None:
-            raise HomeAssistantError("the robot has no plans; make one in the Yard editor")
+            raise HomeAssistantError("the robot has no plans; make one on the Yarbo dashboard")
         await self.coordinator.async_start_plan(plan_id, self._context)
 
     async def async_pause(self) -> None:

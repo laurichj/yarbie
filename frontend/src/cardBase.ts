@@ -2,11 +2,16 @@
 // write rails as the integration reports them, styles, and registering the element.
 // Loaded on every page (HA's extra modules), so it imports nothing at run time.
 
+import type { Run } from "./api";
+
 export interface CardHass {
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
   callService(domain: string, service: string, data?: Record<string, unknown>): Promise<unknown>;
   states: Record<string, { state: string; attributes: Record<string, unknown> } | undefined>;
   user?: { is_admin?: boolean; name?: string };
+  connection?: {
+    subscribeMessage<T>(cb: (event: T) => void, msg: Record<string, unknown>): Promise<() => Promise<void>>;
+  };
 }
 
 export interface CardConfig {
@@ -117,6 +122,7 @@ export abstract class YarbieCard extends HTMLElement {
 
   /** Why writes would be refused now, or null when they would be sent. */
   protected refusal(): string | null {
+    if (!this.isAdmin) return null; // they cannot write at all, and each card says so
     const w = this.writes;
     if (!w) return "No answer from yarbie.";
     if (!w.connected) return "Not connected to the robot.";
@@ -172,12 +178,62 @@ export abstract class YarbieCard extends HTMLElement {
   }
 }
 
+/** A parameter of Home Assistant's address (?area=, ?run=, ?plan=): how links from the
+ * Yard editor, entities and notifications select something on the dashboard's cards. */
+export function queryParam(name: string): string | null {
+  return new URLSearchParams(window.location.search).get(name);
+}
+
+/** Set or clear one parameter of the address without leaving the view, so a reload or a
+ * shared link shows the same thing. */
+export function setQueryParam(name: string, value: string | null) {
+  const url = new URL(window.location.href);
+  if (value === null) url.searchParams.delete(name);
+  else url.searchParams.set(name, value);
+  history.replaceState(history.state, "", url);
+}
+
+/** The runs card showing a run (or none): the yard card shades its areas. */
+export const RUN_EVENT = "yarbie-run-shown";
+export interface RunShown {
+  entry_id: string | null;
+  run: Run | null;
+}
+
+// Runs being read, shared by the cards: a ?run= link opens the run on the runs card and the
+// yard card at once, and they should not each ask for it.
+const runsRead = new Map<string, Promise<Run | null>>();
+
+/** A run in full by key (``last``: the newest that ended), or null if there is none. */
+export function loadRun(
+  ws: <T>(type: string, data?: Record<string, unknown>) => Promise<T>,
+  entryId: string | undefined,
+  key: string,
+): Promise<Run | null> {
+  const id = `${entryId ?? ""}|${key}`;
+  let read = runsRead.get(id);
+  if (!read) {
+    read = (async () => {
+      let found: string | undefined = key;
+      if (key === "last") {
+        const { runs } = await ws<{ runs: Run[] }>("runs/list", { limit: 5 });
+        found = runs.find((r) => r.outcome !== "running")?.key;
+      }
+      return found ? await ws<Run>("runs/get", { key: found }) : null;
+    })();
+    runsRead.set(id, read);
+    const forget = () => window.setTimeout(() => runsRead.delete(id), 5000);
+    read.then(forget, forget);
+  }
+  return read;
+}
+
 export function errorText(err: unknown): string {
   if (err instanceof CardError && err.code === "unauthorized") return "Only administrators can change this.";
   return err instanceof Error ? err.message : String(err);
 }
 
-const STYLE = `
+export const STYLE = `
   :host { display: block; }
   .card-content { padding: 0 16px 16px; }
   ul.list { list-style: none; margin: 0; padding: 0; }

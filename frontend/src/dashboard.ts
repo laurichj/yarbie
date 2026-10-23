@@ -1,9 +1,13 @@
 // A ready-made Yarbo dashboard: Settings > Dashboards > Add dashboard > Yarbo.
 //
 // A strategy, not a saved layout: it is rebuilt from the robot's entities each time it
-// opens, so renamed entities and a second robot need no editing. One view per robot,
-// in three balanced columns: the mower and its controls, the map, recent activity.
-// Loaded on every page (HA's extra modules), so it imports nothing.
+// opens, so renamed entities and a second robot need no editing. Two views per robot:
+// three balanced columns (the mower and its controls, the yard map, recent runs), and a
+// full-width Area settings table. ?area=, ?run= and ?plan= in the address select an area
+// or run on their cards. Loaded on every page (HA's extra modules), so it imports only
+// the small rule it shares with the editor.
+
+import { yarbieDevices } from "./robots";
 
 interface EntityEntry {
   entity_id: string;
@@ -66,13 +70,18 @@ function tiles(hass: Hass, found: Map<string, string>, device: string, keys: str
   });
 }
 
-function view(hass: Hass, deviceId: string, robots: number): Card {
+/** The dashboard's own path (/<url_path>), for links between its views. */
+function dashboardPath(): string {
+  return `/${window.location.pathname.split("/")[1] ?? ""}`;
+}
+
+function views(hass: Hass, deviceId: string, robots: number): Card[] {
   const found = byKey(hass, deviceId);
   const device = hass.devices[deviceId];
   const name = device?.name_by_user || device?.name || "Yarbo";
+  const path = robots > 1 ? deviceId : "yard";
   const mower = found.get("mower");
   const plan = found.get("plan_select");
-  const map = found.get("map");
 
   const controls: Card[] = [{ type: "heading", heading: name, heading_style: "title" }];
   if (mower) {
@@ -108,16 +117,17 @@ function view(hass: Hass, deviceId: string, robots: number): Card {
   });
 
   const yard: Card[] = [{ type: "heading", heading: "Yard", heading_style: "title" }];
-  if (map) {
-    yard.push({
-      type: "picture-entity",
-      entity: map,
-      show_name: false,
-      show_state: false,
-      tap_action: { action: "navigate", navigation_path: EDITOR },
-      grid_options: { columns: 12 },
-    });
-  }
+  // The yard map card, not the map image entity (that stays for other dashboards and
+  // automations): it also shows the run, route previews, wear and past runs.
+  const tracker = found.get("position");
+  const map = found.get("map");
+  yard.push({
+    type: "custom:yarbie-yard-card",
+    ...robot,
+    ...(tracker ? { tracker } : {}),
+    ...(map ? { map } : {}),
+    grid_options: { columns: 12 },
+  });
   yard.push({
     type: "button",
     name: "Open Yard editor",
@@ -148,6 +158,19 @@ function view(hass: Hass, deviceId: string, robots: number): Card {
   if (watched.length) {
     recent.push({ type: "logbook", target: { entity_id: watched }, hours_to_show: 48, grid_options: { columns: 12 } });
   }
+  // Runs beside the logbook; picking one shades its areas on the yard card. The last-run
+  // sensor's attributes change when a run ends.
+  const lastRun = found.get("last_run");
+  if (lastRun) {
+    const tile = tiles(hass, found, name, ["last_run"])[0];
+    recent.push({ ...tile, tap_action: { action: "navigate", navigation_path: `${dashboardPath()}/${path}?run=last` } });
+  }
+  recent.push({
+    type: "custom:yarbie-runs-card",
+    ...robot,
+    ...(lastRun ? { entity: lastRun } : {}),
+    grid_options: { columns: 12 },
+  });
   const battery = found.get("battery");
   if (battery) {
     recent.push({
@@ -159,29 +182,33 @@ function view(hass: Hass, deviceId: string, robots: number): Card {
     });
   }
 
-  return {
-    title: robots > 1 ? name : "Yard",
-    path: robots > 1 ? deviceId : "yard",
-    icon: "mdi:robot-mower",
-    type: "sections",
-    max_columns: 3,
-    sections: [
-      { type: "grid", cards: controls },
-      { type: "grid", cards: yard },
-      { type: "grid", cards: recent },
-    ],
-  };
+  return [
+    {
+      title: robots > 1 ? name : "Yard",
+      path,
+      icon: "mdi:robot-mower",
+      type: "sections",
+      max_columns: 3,
+      sections: [
+        { type: "grid", cards: controls },
+        { type: "grid", cards: yard },
+        { type: "grid", cards: recent },
+      ],
+    },
+    {
+      // A whole page: the table has a column per setting. The Yard editor links here.
+      title: robots > 1 ? `${name} area settings` : "Area settings",
+      path: robots > 1 ? `${deviceId}-area-settings` : "area-settings",
+      icon: "mdi:tune-variant",
+      type: "panel",
+      cards: [{ type: "custom:yarbie-area-settings-card", ...robot }],
+    },
+  ];
 }
 
 class YarbieDashboardStrategy extends HTMLElement {
   static async generate(_config: Card, hass: Hass): Promise<Card> {
-    const devices = [
-      ...new Set(
-        Object.values(hass.entities)
-          .filter((e) => e.platform === PLATFORM && e.device_id)
-          .map((e) => e.device_id as string),
-      ),
-    ];
+    const devices = yarbieDevices(hass.entities);
     if (!devices.length) {
       return {
         title: "Yarbo",
@@ -198,7 +225,7 @@ class YarbieDashboardStrategy extends HTMLElement {
         ],
       };
     }
-    return { title: "Yarbo", views: devices.map((id) => view(hass, id, devices.length)) };
+    return { title: "Yarbo", views: devices.flatMap((id) => views(hass, id, devices.length)) };
   }
 }
 
@@ -222,6 +249,6 @@ if (!w.customStrategies.some((s) => s.type === "yarbie" && s.strategyType === "d
     type: "yarbie",
     strategyType: "dashboard",
     name: "Yarbo",
-    description: "The robot, its map and recent runs, laid out for you.",
+    description: "The robot, its yard map, runs and every area's settings, laid out for you.",
   });
 }
