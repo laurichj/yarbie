@@ -5,7 +5,7 @@
 // (outlined) until reviewed and sent with a two-click confirm. The integration backs up
 // each affected area's settings before sending, then reads them all again.
 
-import { api, ApiError, type AreaChange, type AreaSettings, type Status } from "./api";
+import { api, ApiError, type AreaChange, type AreaSettings, type AreaSettingsResult, type Status } from "./api";
 import { GROUPS, HIDDEN, PATTERNS, read, type Field, type Params } from "./areaSettings";
 
 interface Column extends Omit<Field, "kind"> {
@@ -42,7 +42,7 @@ let status: Status | null = null;
 let stage: "edit" | "review" = "edit";
 let armed = false;
 let sending = false;
-let results: { area_id: number; name: string; ok: boolean; error: string | null }[] | null = null;
+let results: AreaSettingsResult["results"] | null = null;
 let sentSomething = false;
 let onClose: (changed: boolean) => void = () => {};
 
@@ -146,8 +146,9 @@ export async function openAreaSettings(close: (changed: boolean) => void, focusA
   $("app").hidden = true;
   $("area-view").hidden = false;
   if (focusArea !== undefined) selected.add(focusArea);
-  if (!rows.length) await load();
-  else render();
+  // Always read again: the settings may have changed since (the per-area form, the app),
+  // and edits must be compared with what the robot holds now. Pending edits are kept.
+  await load();
 }
 
 function closeView() {
@@ -390,16 +391,25 @@ async function send() {
   render();
   try {
     const result = await api.applyAreaSettings(changesToSend());
-    rows = result.areas;
     results = result.results;
     sentSomething ||= result.results.some((r) => r.ok);
     // What was sent is now what the robot holds; failed areas keep their edits to retry.
-    for (const r of result.results) if (r.ok) pending.delete(r.area_id);
-    for (const id of [...pending.keys()]) {
-      const row = rows.find((x) => x.id === id);
-      if (row) for (const [path, v] of pending.get(id)!) setPending(row, path, v);
-    }
+    for (const r of result.results) if (r.ok || r.skipped) pending.delete(r.area_id);
     stage = "edit";
+    if (result.areas) {
+      const fresh = new Map(result.areas.map((a) => [a.id, a]));
+      rows = rows.map((r) => fresh.get(r.id) ?? r);
+      for (const id of [...pending.keys()]) {
+        const row = rows.find((x) => x.id === id);
+        if (row) for (const [path, v] of pending.get(id)!) setPending(row, path, v);
+      }
+    } else {
+      // Sent, but the read-back failed: read everything again (load keeps pending edits).
+      say(`Sent, but reading the areas back failed (${result.read_error ?? "no answer"}). Reading them again…`, "error");
+      sending = false;
+      await load();
+      return;
+    }
   } catch (err) {
     results = null;
     say(message(err), "error");
@@ -410,10 +420,13 @@ async function send() {
 }
 
 function resultList(): string {
-  const failed = results!.filter((r) => !r.ok).length;
+  const failed = results!.filter((r) => r.error).length;
+  const changed = results!.filter((r) => r.ok).length;
   return `<div class="area-results ${failed ? "error" : "ok"}">
-    <b>${failed ? `${results!.length - failed} of ${results!.length} areas changed` : `All ${results!.length} areas changed`}</b>; settings read again from the robot.
-    <ul>${results!.map((r) => `<li>${r.ok ? "✓" : "✗"} ${esc(r.name || `Area ${r.area_id}`)}${r.error ? `: ${esc(r.error)}` : ""}</li>`).join("")}</ul>
+    <b>${changed} of ${results!.length} area${results!.length === 1 ? "" : "s"} changed</b>; settings read again from the robot.
+    <ul>${results!
+      .map((r) => `<li>${r.ok ? "✓" : r.skipped ? "–" : "✗"} ${esc(r.name || `Area ${r.area_id}`)}${r.error ? `: ${esc(r.error)}` : r.skipped ? `: ${esc(r.skipped)}` : ""}</li>`)
+      .join("")}</ul>
   </div>`;
 }
 

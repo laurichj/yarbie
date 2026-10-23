@@ -70,9 +70,12 @@ var e = (e) => String(e ?? "").replace(/[&<>"']/g, (e) => ({
 		let e = this.writes;
 		return e ? e.connected ? e.writable ? e.busy ? "The robot is running or paused in a plan. Stop or finish it first." : null : `Read-only: ${e.read_only_reason ?? "writes are off"}.` : "Not connected to the robot." : "No answer from yarbie.";
 	}
+	blocked(e) {
+		return !1;
+	}
 	updateRails() {
 		let e = this.refusal(), t = this.shadowRoot.querySelector(".rails");
-		t && (t.textContent = e ?? "", t.hidden = !e), this.shadowRoot.querySelectorAll("button[data-write]").forEach((t) => t.disabled = !!e);
+		t && (t.textContent = e ?? "", t.hidden = !e), this.shadowRoot.querySelectorAll("[data-write]").forEach((t) => t.disabled = !!e || this.blocked(t));
 	}
 	say(e, t = "") {
 		this.message = {
@@ -126,6 +129,9 @@ a("yarbie-plans-card", class extends n {
 	}
 	editing() {
 		return this.#n !== null;
+	}
+	blocked() {
+		return this.#i;
 	}
 	async load() {
 		if (!this.isAdmin) this.#r = "Only administrators can manage plans. The plan select still picks which one Start runs.", this.render();
@@ -292,6 +298,9 @@ a("yarbie-schedules-card", class extends n {
 	editing() {
 		return this.#t !== null;
 	}
+	blocked(e) {
+		return this.#r ? !0 : e.dataset.new === void 0 ? e.dataset.toggle !== void 0 && this.#t !== null : !this.#e?.plans.length;
+	}
 	async load() {
 		if (!this.isAdmin) this.#n = "Only administrators can manage schedules.", this.render();
 		else {
@@ -332,7 +341,7 @@ a("yarbie-schedules-card", class extends n {
 		return `<div class="form">
       <h3>${t.schedule_id === null ? "New schedule" : "Edit schedule"}</h3>
       <label class="field">Name<input type="text" id="name" value="${e(t.name)}" /></label>
-      <label class="field">Plan<select id="plan">${n.plans.map((n) => `<option value="${n.id}" ${n.id === t.plan_id ? "selected" : ""}>${e(n.name)}</option>`).join("")}</select></label>
+      <label class="field">Plan<select id="plan">${n.plans.some((e) => e.id === t.plan_id) ? "" : "<option value=\"\" selected disabled>Choose a plan</option>"}${n.plans.map((n) => `<option value="${n.id}" ${n.id === t.plan_id ? "selected" : ""}>${e(n.name)}</option>`).join("")}</select></label>
       <div class="row">
         <label class="field">Start<input type="time" id="start" value="${e(c(t.start_time))}" /></label>
         <label class="field">End<input type="time" id="end" value="${e(c(t.end_time))}" /></label>
@@ -405,7 +414,7 @@ a("yarbie-schedules-card", class extends n {
 		let e = this.#t;
 		if (!e) return;
 		let t = e.name.trim();
-		if (!t || e.plan_id === null) return this.say("A schedule needs a name and a plan.", "error");
+		if (!t || !this.#e.plans.some((t) => t.id === e.plan_id)) return this.say("A schedule needs a name and a plan.", "error");
 		let { schedule_id: n, ...r } = e;
 		await this.#u(async () => (await this.ws("schedules/save", {
 			...r,

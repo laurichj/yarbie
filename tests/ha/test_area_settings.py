@@ -111,3 +111,41 @@ async def test_area_settings_obey_the_kill_switch(ws: WS, entry: MockConfigEntry
     reply = await ws("yarbie/area_settings/apply", changes=[{"area_id": 1, "params": {"edge_circles": 1}}])
     assert reply["error"]["code"] == "read_only"
     assert not entry.runtime_data.service.backups.dir.exists()
+
+
+async def test_nested_keys_are_checked_before_sending(ws: WS, entry: MockConfigEntry) -> None:
+    sim = entry.runtime_data.robot.simulator
+    reply = await ws(
+        "yarbie/area_settings/apply",
+        changes=[
+            {"area_id": 1, "params": {"edge_circles": 1}},
+            {"area_id": 2, "params": {"first_clean_params": {"bogus": 1}}},
+        ],
+    )
+    assert reply["error"]["code"] == "invalid" and "bogus" in reply["error"]["message"]
+    flat = await ws("yarbie/area_settings/apply", changes=[{"area_id": 1, "params": {"first_clean_params": 5}}])
+    assert flat["error"]["code"] == "invalid"
+    assert sim.mower_area_params[1]["edge_circles"] == 2
+    assert not entry.runtime_data.service.backups.dir.exists()
+
+
+async def test_nothing_to_send_is_not_reported_as_a_change(hass: HomeAssistant, ws: WS) -> None:
+    changed = async_capture_events(hass, "yarbie_area_settings_changed")
+    reply = await ws("yarbie/area_settings/apply", changes=[{"area_id": 1, "algorithm_type": 0}])
+    [result] = reply["result"]["results"]
+    assert (result["ok"], result["error"], result["skipped"]) == (False, None, "nothing to change")
+    await hass.async_block_till_done()
+    assert changed == []
+
+
+async def test_a_failed_read_back_still_reports_what_was_sent(ws: WS, entry: MockConfigEntry) -> None:
+    async def no_answer(area_ids: list[int]) -> list[dict]:
+        raise TimeoutError("no reply")
+
+    entry.runtime_data.service._read_back = no_answer  # type: ignore[method-assign]
+    reply = await ws("yarbie/area_settings/apply", changes=[{"area_id": 1, "params": {"edge_circles": 1}}])
+    assert reply["success"], reply
+    result = reply["result"]
+    assert result["areas"] is None and result["read_error"] == "no reply"
+    assert result["results"][0]["ok"] and result["backup"]
+    assert entry.runtime_data.robot.simulator.mower_area_params[1]["edge_circles"] == 1

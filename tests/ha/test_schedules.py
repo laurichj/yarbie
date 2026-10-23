@@ -153,3 +153,34 @@ def test_reading_of_days_and_times() -> None:
     assert days == ["2026-10-18", "2026-10-24", "2026-10-25"]
     assert not list(schedules.occurrences(_schedule(enable=False), monday, week, zone))
     assert not list(schedules.occurrences(_schedule(week_day=0), monday, week, zone))
+
+
+async def test_a_failed_schedules_read_keeps_the_plans(hass: HomeAssistant, ws: WS, entry: MockConfigEntry) -> None:
+    sim = entry.runtime_data.robot.simulator
+    sim.cmd_read_schedules = lambda value: sim._feedback("read_schedules", -1, "unsupported", "")  # type: ignore[method-assign]
+    assert (await ws("yarbie/plans/save", name="Back only", area_ids=[2]))["success"]
+    await hass.async_block_till_done()
+    assert "Back only" in state(hass, "select.yarbo_plan").attributes["options"]
+    assert state(hass, DEMO).state == "on"  # the last schedules read is kept, not emptied
+
+
+async def test_switch_refuses_a_schedule_without_a_known_plan(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    c = entry.runtime_data
+    c.robot.simulator.schedules[0]["plan_id"] = 99
+    await c._refresh_plans()
+    with pytest.raises(HomeAssistantError, match="no plan"):
+        await hass.services.async_call("switch", "turn_off", {"entity_id": DEMO}, blocking=True)
+    assert c.robot.simulator.schedules[0]["enable"] is True
+
+
+async def test_switches_of_schedules_gone_while_stopped_are_removed(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    registry = er.async_get(hass)
+    stale = registry.async_get_or_create(
+        "switch", "yarbie", f"{entry.unique_id}_schedule_7", config_entry=entry, suggested_object_id="old_schedule"
+    )
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert registry.async_get(stale.entity_id) is None
+    assert registry.async_get(DEMO) is not None

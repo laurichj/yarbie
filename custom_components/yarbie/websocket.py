@@ -291,6 +291,7 @@ async def ws_schedules(hass: HomeAssistant, connection: websocket_api.ActiveConn
     c = _coordinator(hass, msg)
     c.plans = await c.robot.plans()
     c.schedules = await c.robot.schedules()
+    c.schedules_read = True
     c.async_update_listeners()
     connection.send_result(msg["id"], _schedules_reply(c))
 
@@ -415,7 +416,7 @@ async def ws_area_settings_apply(hass: HomeAssistant, connection: websocket_api.
     result = await c.service.apply_area_settings(msg["changes"], actor)
     c.map_stale = False
     sent = [r for r in result["results"] if r["ok"]]
-    failed = [r for r in result["results"] if not r["ok"]]
+    failed = [r for r in result["results"] if r["error"]]
     if sent:
         names = ", ".join(r["name"] or f"area {r['area_id']}" for r in sent)
         trouble = f"\n\nNot changed: {', '.join(r['name'] or str(r['area_id']) for r in failed)}." if failed else ""
@@ -431,7 +432,7 @@ async def ws_area_settings_apply(hass: HomeAssistant, connection: websocket_api.
             {"serial": c.serial, "actor": actor, "areas": [r["area_id"] for r in sent], "backup": result["backup"]},
         )
         c.async_update_listeners()
-    connection.send_result(msg["id"], {**result, "areas": await c.service.area_settings()})
+    connection.send_result(msg["id"], result)
 
 
 # -- run history

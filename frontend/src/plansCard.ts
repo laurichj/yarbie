@@ -31,6 +31,10 @@ class YarbiePlansCard extends YarbieCard {
     return this.#draft !== null;
   }
 
+  protected blocked() {
+    return this.#sending;
+  }
+
   protected async load() {
     if (!this.isAdmin) {
       this.#loadError = "Only administrators can manage plans. The plan select still picks which one Start runs.";

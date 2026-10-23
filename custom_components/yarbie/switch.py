@@ -14,7 +14,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import schedules
 from ._vendor.yarbo_local.models import RobotState, Schedule
-from .const import DOMAIN
 from .coordinator import YarbieConfigEntry, YarbieCoordinator
 from .entity import YarbieEntity
 from .robot import Robot
@@ -56,18 +55,24 @@ async def async_setup_entry(
     # Schedules come and go (in the card or the app): a switch for each one there is now.
     known: set[int] = set()
 
+    prefix = f"{coordinator.serial}_schedule_"
+
     @callback
     def sync() -> None:
         current = {s.id for s in coordinator.schedules}
         if new := current - known:
             known.update(new)
             add(YarbieScheduleSwitch(coordinator, i) for i in sorted(new))
+        if not coordinator.schedules_read:
+            return  # an empty list until the robot has answered; remove nothing
+        # Every schedule switch the registry holds for this robot, including ones left
+        # from schedules deleted (in the app, say) while Home Assistant was stopped.
         registry = er.async_get(hass)
-        for gone in known - current:
-            known.discard(gone)
-            unique_id = f"{coordinator.serial}_schedule_{gone}"
-            if entity_id := registry.async_get_entity_id("switch", DOMAIN, unique_id):
-                registry.async_remove(entity_id)
+        wanted = {f"{prefix}{i}" for i in current}
+        for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if entity.domain == "switch" and entity.unique_id.startswith(prefix) and entity.unique_id not in wanted:
+                known.discard(int(entity.unique_id.removeprefix(prefix)))
+                registry.async_remove(entity.entity_id)
 
     sync()
     entry.async_on_unload(coordinator.async_add_listener(sync))

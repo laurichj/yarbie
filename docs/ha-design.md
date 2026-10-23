@@ -596,9 +596,13 @@ table of 30 columns needs.
   confirm. `yarbie/area_settings/apply` checks every change before sending anything,
   takes the write lock, refuses while a plan runs or is paused, obeys the kill switch and
   the untested-firmware rail, and saves a backup of every affected area's record and
-  settings beside the map backups, named with who sent it. Each area is reported as
-  changed or not; one failing does not stop the rest. All areas are then read again, and
-  a notification and a `yarbie_area_settings_changed` event say who changed what.
+  settings beside the map backups, named with who sent it. Group settings
+  (`first_clean_params`...) may only name keys the robot already holds. Each area is
+  reported as changed, unchanged (nothing to send) or refused; one failing does not stop
+  the rest. The areas sent to are then read again, one at a time (the session pairs
+  replies by command name), and the table re-reads everything each time it opens. If
+  that read-back fails, the reply still says what was sent. A notification and a
+  `yarbie_area_settings_changed` event say who changed what.
 - Not built: restoring from an area settings backup (the file holds what is needed; the
   map History lists only map backups).
 

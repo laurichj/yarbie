@@ -164,9 +164,11 @@ export interface AreaChange {
 }
 
 export interface AreaSettingsResult {
-  results: { area_id: number; name: string; ok: boolean; error: string | null }[];
+  // ok: something was sent; skipped: there was nothing to send; error: it was refused.
+  results: { area_id: number; name: string; ok: boolean; error: string | null; skipped: string | null }[];
   backup: string;
-  areas: AreaSettings[];
+  areas: AreaSettings[] | null; // the areas sent to, read again; null if that read failed
+  read_error: string | null;
 }
 
 /** What the panel needs from the ``hass`` object Home Assistant hands it. */

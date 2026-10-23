@@ -68,6 +68,13 @@ class YarbieSchedulesCard extends YarbieCard {
     return this.#draft !== null;
   }
 
+  protected blocked(control: HTMLElement) {
+    if (this.#sending) return true;
+    if (control.dataset.new !== undefined) return !this.#data?.plans.length;
+    if (control.dataset.toggle !== undefined) return this.#draft !== null;
+    return false;
+  }
+
   protected async load() {
     if (!this.isAdmin) {
       this.#loadError = "Only administrators can manage schedules.";
@@ -137,7 +144,10 @@ class YarbieSchedulesCard extends YarbieCard {
     return `<div class="form">
       <h3>${d.schedule_id === null ? "New schedule" : "Edit schedule"}</h3>
       <label class="field">Name<input type="text" id="name" value="${esc(d.name)}" /></label>
-      <label class="field">Plan<select id="plan">${data.plans
+      <label class="field">Plan<select id="plan">${
+        // A plan the robot no longer has (or none) is not shown as the first one: pick one.
+        data.plans.some((p) => p.id === d.plan_id) ? "" : `<option value="" selected disabled>Choose a plan</option>`
+      }${data.plans
         .map((p) => `<option value="${p.id}" ${p.id === d.plan_id ? "selected" : ""}>${esc(p.name)}</option>`)
         .join("")}</select></label>
       <div class="row">
@@ -251,7 +261,7 @@ class YarbieSchedulesCard extends YarbieCard {
     const d = this.#draft;
     if (!d) return;
     const name = d.name.trim();
-    if (!name || d.plan_id === null) return this.say("A schedule needs a name and a plan.", "error");
+    if (!name || !this.#data!.plans.some((p) => p.id === d.plan_id)) return this.say("A schedule needs a name and a plan.", "error");
     const { schedule_id, ...rest } = d;
     await this.#send(async () => {
       await this.ws("schedules/save", { ...rest, name, ...(schedule_id === null ? {} : { schedule_id }) });

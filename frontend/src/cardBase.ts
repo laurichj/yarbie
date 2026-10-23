@@ -125,7 +125,13 @@ export abstract class YarbieCard extends HTMLElement {
     return null;
   }
 
-  /** Refresh the rail notice and the send buttons without redrawing an open form. */
+  /** A card's own reason to keep a write control off (a send in flight, nothing to pick...),
+   * on top of the rails. */
+  protected blocked(_control: HTMLElement): boolean {
+    return false;
+  }
+
+  /** Refresh the rail notice and every write control without redrawing an open form. */
   protected updateRails() {
     const refusal = this.refusal();
     const box = this.shadowRoot!.querySelector<HTMLElement>(".rails");
@@ -133,7 +139,9 @@ export abstract class YarbieCard extends HTMLElement {
       box.textContent = refusal ?? "";
       box.hidden = !refusal;
     }
-    this.shadowRoot!.querySelectorAll<HTMLButtonElement>("button[data-write]").forEach((b) => (b.disabled = !!refusal));
+    this.shadowRoot!.querySelectorAll<HTMLButtonElement | HTMLInputElement>("[data-write]").forEach(
+      (control) => (control.disabled = !!refusal || this.blocked(control)),
+    );
   }
 
   protected say(text: string, kind: "ok" | "error" | "" = "") {

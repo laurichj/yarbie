@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .._vendor.yarbo_local.exceptions import YarboError
 from .._vendor.yarbo_local.payloads import APP_MOWER_AREA_KEYS
 from . import diff, heatmap, mapdoc
 from .backups import BackupStore
@@ -225,6 +226,10 @@ class MapService:
         Each change is ``{"area_id", "algorithm_type"?, "params"?}``; ``params`` is a
         partial mowing record, nested values merged into the stored ones. Every change is
         checked before anything is sent. One area failing does not stop the others.
+
+        The reply has each area's result (``ok`` only when something was sent), and the
+        changed areas read again, or ``areas`` None with ``read_error`` if that read
+        failed: what was sent stays sent.
         """
         self._check_writes()
         for change in changes:
@@ -238,24 +243,32 @@ class MapService:
             missing = sorted(c["area_id"] for c in changes if c["area_id"] not in areas)
             if missing:
                 raise ValueError(f"the robot has no area {', '.join(map(str, missing))}")
-            before = [
-                {"area": areas[c["area_id"]], "params": await self.robot.mower_area_params(c["area_id"])}
-                for c in changes
-            ]
+            # One read at a time: the session pairs replies with requests by command name.
+            before = []
+            for change in changes:
+                params = await self.robot.mower_area_params(change["area_id"])
+                if change.get("params"):
+                    _check_nested(change["area_id"], change["params"], params)
+                before.append({"area": areas[change["area_id"]], "params": params})
             backup = await asyncio.to_thread(self.backups.save_area_settings, before, actor)
             results: list[dict[str, Any]] = []
             for change in changes:
                 area_id = change["area_id"]
                 result: dict[str, Any] = {
-                    "area_id": area_id, "name": areas[area_id].get("name") or "", "ok": False, "error": None,
+                    "area_id": area_id, "name": areas[area_id].get("name") or "", "ok": False,
+                    "error": None, "skipped": None,
                 }
                 results.append(result)
                 if self.robot.busy:  # started from the app meanwhile: send nothing more
                     result["error"] = "not sent: the robot started a plan"
                     continue
+                pattern = change.get("algorithm_type")
+                new_pattern = pattern is not None and pattern != areas[area_id].get("algorithm_type")
+                if not new_pattern and not change.get("params"):
+                    result["skipped"] = "nothing to change"
+                    continue
                 try:
-                    pattern = change.get("algorithm_type")
-                    if pattern is not None and pattern != areas[area_id].get("algorithm_type"):
+                    if new_pattern:
                         await self.robot.update_area(area_id, name=None, outline=None, algorithm_type=pattern)
                     if change.get("params"):
                         await self.robot.update_mower_area_params(area_id, change["params"])
@@ -263,5 +276,42 @@ class MapService:
                     result["error"] = str(err) or type(err).__name__
                     continue
                 result["ok"] = True
-            await self.load()
-            return {"results": results, "backup": backup.name}
+            reply: dict[str, Any] = {"results": results, "backup": backup.name, "areas": None, "read_error": None}
+            try:
+                reply["areas"] = await self._read_back([r["area_id"] for r in results if r["ok"] or r["error"]])
+            except (YarboError, TimeoutError) as err:
+                reply["read_error"] = str(err) or type(err).__name__
+            return reply
+
+    async def _read_back(self, area_ids: list[int]) -> list[dict[str, Any]]:
+        """The map once (for patterns), then the settings of the areas that were sent."""
+        view = await self.load()
+        records = {a.get("id"): a for a in view.raw.get("areas") or []}
+        out = []
+        for area_id in area_ids:
+            record = records.get(area_id, {})
+            out.append(
+                {
+                    "id": area_id,
+                    "name": record.get("name") or "",
+                    "algorithm_type": record.get("algorithm_type"),
+                    "params": await self.robot.mower_area_params(area_id),
+                }
+            )
+        return out
+
+
+def _check_nested(area_id: int, changes: dict[str, Any], stored: dict[str, Any] | None) -> None:
+    """A change to a group of settings (``first_clean_params``...) may only name keys the
+    robot already holds in it; ``changed_record`` merges groups without checking."""
+    for key, value in changes.items():
+        held = (stored or {}).get(key)
+        if isinstance(value, dict) != isinstance(held, dict):
+            if stored is None:
+                raise ValueError(f"the robot sent no settings for area {area_id}")
+            kind = "a group of settings" if isinstance(held, dict) else "a single setting"
+            raise ValueError(f"{key} of area {area_id} is {kind}")
+        if isinstance(value, dict) and isinstance(held, dict):
+            unknown = sorted(set(value) - set(held))
+            if unknown:
+                raise ValueError(f"not a setting in {key}: {', '.join(unknown)}")

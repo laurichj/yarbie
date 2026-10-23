@@ -93,6 +93,7 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         )
         self.plans: list[PlanSummary] = []
         self.schedules: list[Schedule] = []
+        self.schedules_read = False  # the schedules have been read at least once
         self.selected_plan: str | None = None  # the plan select's choice, by name
         self.feedback: PlanFeedback | None = None
         self.map_stale = True
@@ -193,9 +194,9 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         try:
             await self.robot.snapshot()
             self.plans = await self.robot.plans()
-            self.schedules = await self.robot.schedules()
         except (YarboError, TimeoutError) as err:
             _LOGGER.warning("first read from the robot failed: %s", err)
+        await self._read_schedules()
         self.check_firmware()
         self.async_set_updated_data(self.robot.state)
         # The map and the run history can take the robot many seconds to send; entities
@@ -359,14 +360,25 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         return "a Home Assistant automation" if context.parent_id else "Home Assistant"
 
     async def _refresh_plans(self, _now: Any = None) -> None:
-        """The plans and their schedules."""
+        """The plans and their schedules, each read on its own: one failing must not
+        throw away the other."""
         try:
             self.plans = await self.robot.plans()
-            self.schedules = await self.robot.schedules()
+            plans_read = True
         except (YarboError, TimeoutError) as err:
             _LOGGER.debug("reading plans failed: %s", err)
-            return
-        self.async_update_listeners()
+            plans_read = False
+        if await self._read_schedules() or plans_read:
+            self.async_update_listeners()
+
+    async def _read_schedules(self) -> bool:
+        try:
+            self.schedules = await self.robot.schedules()
+        except (YarboError, TimeoutError) as err:
+            _LOGGER.debug("reading schedules failed: %s", err)
+            return False
+        self.schedules_read = True
+        return True
 
     # -- schedules
 
@@ -385,6 +397,11 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         current = next((s for s in self.schedules if s.id == schedule_id), None)
         if current is None:
             raise LookupError(f"the robot has no schedule {schedule_id}")
+        # The websocket command checks these; this path sends the stored record back.
+        if current.plan_id is None or all(p.id != current.plan_id for p in self.plans):
+            raise ValueError(f"schedule {schedule_id} has no plan the robot knows; edit it first")
+        if not current.name:
+            raise ValueError(f"schedule {schedule_id} has no name; edit it first")
         await self.async_save_schedule(**{**schedules.fields(current), "enabled": enabled})
 
     async def _keep_awake(self, _now: Any) -> None:

@@ -10,7 +10,7 @@ var t = ".maplibregl-map{-webkit-tap-highlight-color:#0000;-webkit-touch-callout
 			let t = document.createElement("style");
 			t.textContent = e, document.head.append(t);
 		}
-		this.innerHTML = r, await import("./main-D7CjgRxb.js");
+		this.innerHTML = r, await import("./main-zbUiq9Aa.js");
 	}
 };
 customElements.define("yarbie-panel", i);
