@@ -3,8 +3,10 @@
 name: CI
 
 on:
+  # Pushes to main and pull requests, so a push to a PR's branch runs CI once, not twice.
+  # Tags go through release.yml, which calls this.
   push:
-    branches: ["**"]  # tags go through release.yml, which calls this
+    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -72,6 +74,7 @@ jobs:
           unzip -q yarbie.zip -d "$check/custom_components/yarbie"
           cp -R tests pyproject.toml "$check/"
           ln -s "$GITHUB_WORKSPACE/third_party" "$check/third_party"
+          ln -s "$GITHUB_WORKSPACE/blueprints" "$check/blueprints"
           cd "$check"
           "$GITHUB_WORKSPACE/.venv/bin/python" -c 'import custom_components.yarbie as m, sys; sys.exit(not m.__file__.startswith(sys.argv[1]))' "$check"
           "$GITHUB_WORKSPACE/.venv/bin/pytest" -q -p no:cacheprovider

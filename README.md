@@ -141,7 +141,7 @@ for trying a branch on a real Home Assistant before it is released.
 ### Releasing
 
 1. Set the new version in `custom_components/yarbie/manifest.json` and `pyproject.toml`
-   (both the same, `X.Y.Z`), commit, and merge to `main`.
+   (both the same, `X.Y.Z`; CI fails if they differ), commit, and merge to `main`.
 2. Tag that commit and push the tag:
 
    ```sh

@@ -720,14 +720,15 @@ onto it and drop their `www/` changes. From then on, a branch never commits buil
   fixed timestamps, so the same tree gives the same zip). CI then runs the test suite
   against the unzipped copy, the fresh-clone check applied to what HACS installs. Each run
   keeps the zip as an artifact, and `release.yml` publishes CI's zip rather than building
-  its own. Running `release.yml` by hand is a dry run that stops there.
+  its own. Running `release.yml` by hand is a dry run that stops there, even with a tag as its ref.
 - **The zip's root is the integration folder.** HACS extracts a `zip_release` asset
   straight into `custom_components/<domain>` (`download_zip_files` in HACS's
   `repositories/base.py`), so `manifest.json` sits at the root, not under
   `custom_components/yarbie/`.
 - **`hide_default_branch`.** The branch no longer holds the built panel, so HACS offers
   only releases. Until the first tag is pushed it has nothing to install.
-- **The tag check covers `pyproject.toml` too**, so the two versions cannot drift.
+- **`pyproject.toml`'s version is checked too**, on every CI run (by the zip script),
+  so a bump that misses one of the two files fails its PR, not the release.
 - **Release notes are the commit subjects since the previous tag** (`git log
   --no-merges`), with no `CHANGELOG.md`: the commit messages already say why, and a
   changelog would be a second copy to keep in step.

@@ -18,20 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check the tag
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          version="$(python3 -c 'import json; print(json.load(open("custom_components/yarbie/manifest.json"))["version"])')"
-          project="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          if [ "$TAG" != "v$version" ]; then
-            echo "::error::tag $TAG does not match manifest.json's version $version (want v$version)"
-            exit 1
-          fi
-          if [ "$project" != "$version" ]; then
-            echo "::error::pyproject.toml's version $project differs from manifest.json's $version"
-            exit 1
-          fi
+        run: python3 scripts/build_release_zip.py --tag "$TAG" --check-version
 
   ci:
     needs: tag
@@ -39,7 +29,8 @@ jobs:
 
   release:
     name: GitHub release
-    if: github.ref_type == 'tag'
+    # Only a pushed tag: a manual run is a dry run even with a tag picked as its ref.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: ci
     runs-on: ubuntu-latest
     permissions:
