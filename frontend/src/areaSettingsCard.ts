@@ -64,10 +64,6 @@ class YarbieAreaSettingsCard extends YarbieCard {
     return false;
   }
 
-  protected refusal() {
-    return this.isAdmin ? super.refusal() : null; // others cannot write at all; the card says so
-  }
-
   protected async load() {
     // The table reads every area; the form shows one of those rows.
     await Promise.all([this.#table.load(), this.refreshWrites()]);

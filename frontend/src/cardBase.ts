@@ -122,6 +122,7 @@ export abstract class YarbieCard extends HTMLElement {
 
   /** Why writes would be refused now, or null when they would be sent. */
   protected refusal(): string | null {
+    if (!this.isAdmin) return null; // they cannot write at all, and each card says so
     const w = this.writes;
     if (!w) return "No answer from yarbie.";
     if (!w.connected) return "Not connected to the robot.";
