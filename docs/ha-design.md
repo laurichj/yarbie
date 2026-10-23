@@ -605,6 +605,104 @@ table of 30 columns needs.
   `yarbie_area_settings_changed` event say who changed what.
 - Not built: restoring from an area settings backup (the file holds what is needed; the
   map History lists only map backups).
+  
+### 6. Keep the Yard editor to editing the map
+
+Builds on #5 (plan and schedule cards, and TODO 5: the Area settings table), which
+adds the cards and the view this moves.
+
+The Yard editor should hold only what it takes to edit the map: zones, pathways,
+sidewalks, area shapes and names, the change list and apply, map backups, imagery and
+its alignment. Everything else moves to the Yarbo dashboard, where the robot's other
+controls already are. Plans moved there in TODO 3; this does the same for the rest.
+
+**Moves to the dashboard:**
+- **Area settings** (the TODO 5 table). It becomes a full-width dashboard view, "Area
+  settings": a `panel` view the strategy adds, holding a `custom:yarbie-area-settings-card`
+  built from `areaTable.ts`. It uses the same `yarbie/area_settings/*` commands, rails and
+  backups.
+  - **Who can use it:** dashboards are seen by non-admins, while settings writes stay
+    admin-only. For non-admins the card shows the table read-only, and the writes still
+    refuse them.
+- **The single-area mowing settings form** (the Areas tab's pattern, cutting height,
+  passes, speed). These are settings, not map geometry: they belong in the same view,
+  with one area picked.
+- **Runs** (TODO 1): the run list, its plan filter and a run's timeline become a
+  `custom:yarbie-runs-card` in the dashboard's Recent column, next to the logbook.
+  - The run's areas, shaded by what was finished, can't go on the editor's map once it's
+    gone from there. They're drawn on a dashboard map (below).
+
+**A read-only map card for what is shown, not edited.** The editor's map also hosts views
+that edit nothing:
+- a past run's areas
+- the route preview
+- the current run's progress
+- the wear heatmap
+
+These go to one `custom:yarbie-yard-card` on the dashboard: MapLibre with the same
+imagery and alignment, no drawing tools, and layers picked by what you asked to see. It
+takes the place of the map image on the dashboard. It also lets the editor stop polling
+run progress, and stop following route-preview and heatmap jobs.
+
+**What the editor keeps:**
+- the drawing tools
+- the Selected and Changes sections
+- History (map backups) and imagery alignment
+- area names and shapes; an area's mowing settings are a link to the dashboard view
+
+The Plans and Areas sections, the Runs list, the wear heatmap, the route preview and the
+current-run overlay all leave. The header loses the Map / Area settings switch.
+
+**Things to settle while doing it:**
+- **Links from HA to the right place:** the editor's "area settings for this area", and
+  the device page's plan and run entities, should open the dashboard view with that area
+  or run selected. The cards read a hash or query parameter for this.
+- **The `image` entity:** it stays for other dashboards and for automations; only the
+  Yarbo dashboard swaps it for the yard card.
+- **Code layout:** `main.ts` gets smaller. The cards share map drawing (layers, imagery,
+  alignment) with the editor through a module both bundles import, not a copy. The cards
+  bundle stays loaded on every page, so the MapLibre part loads only when a yard card is
+  on screen.
+
+### 7. A real build and release process (stop committing built JS)
+
+Today the Vite output in `custom_components/yarbie/www/` is committed, because HACS
+installs the repository as it stands and Home Assistant never runs `npm`. That costs:
+- **History:** every rebuild stores another ~1.5 MB editor bundle. `main` held 17 versions
+  of `www/` (about 10 MB before compression) after 7 rebuilds.
+- **Conflicts:** the file names carry content hashes, so any two branches that rebuild
+  conflict in `www/`.
+- **Drift:** nothing checks that the committed bundle matches `frontend/src`.
+
+There is also no CI at all. A missing file (the vendored protocol data, kept out by a
+`.gitignore` rule) reached GitHub, and only a fresh clone showed it.
+
+**The process to build:**
+- **CI on every push and PR** (GitHub Actions):
+  - `pytest` against the simulator
+  - `ty check custom_components tests`
+  - `npm ci && npm run typecheck && npm run build`
+  - `python3 scripts/vendor_yarbo_local.py --check`
+  - A check that the integration loads from a clean checkout (the fresh-clone test above),
+    with HA's own `hassfest` and the HACS validation action for the manifest, `hacs.json`
+    and translations.
+- **Releases from tags:** pushing `vX.Y.Z` runs the same checks, builds the frontend, and
+  zips `custom_components/yarbie` (with `www/` built) as `yarbie.zip` on a GitHub release.
+  - The tag must match `manifest.json`'s `version`, which the workflow checks.
+  - Release notes come from the commits since the last tag (or a `CHANGELOG.md`).
+- **HACS installs the release, not the branch:** `hacs.json` gets `"zip_release": true`
+  and `"filename": "yarbie.zip"`. HACS then offers versions, and updating is a release
+  away.
+- **Stop committing `www/`:** add it to `.gitignore` and remove the built files from git.
+  Locally `npm run build` or `npm run watch` still fill it, so `scripts/dev_ha.sh` works as
+  now. `panel.py` already logs and skips the panel when the build is missing.
+  - The vendored yarbo-local copy stays committed: it is small text, and its own check
+    guards it.
+- **Docs:** README sections on releasing (bump the version, tag, push) and on installing a
+  specific version from HACS.
+
+**Order:** land this after the open branches that rebuild `www/` (#5, #6), or rebase them
+onto it and drop their `www/` changes. From then on, a branch never commits build output.
 
 ## Appendix: delta against markus-lassfolk's integration (mower only)
 
