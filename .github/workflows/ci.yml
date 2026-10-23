@@ -63,20 +63,11 @@ jobs:
       - name: Build the frontend
         working-directory: frontend
         run: npm ci && npm run typecheck && npm run build
-      - name: Zip the integration
-        run: python3 scripts/build_release_zip.py
-      # The zip as HACS would install it, with only the tests and what they read beside it.
-      - name: pytest against the zip
-        run: |
-          python3 -m venv .venv && .venv/bin/pip3 install -e '.[dev]'
-          check="$RUNNER_TEMP/zipcheck"
-          mkdir -p "$check/custom_components/yarbie"
-          unzip -q yarbie.zip -d "$check/custom_components/yarbie"
-          cp -R tests pyproject.toml "$check/"
-          for dir in third_party blueprints scripts; do ln -s "$GITHUB_WORKSPACE/$dir" "$check/$dir"; done
-          cd "$check"
-          "$GITHUB_WORKSPACE/.venv/bin/python" -c 'import custom_components.yarbie as m, sys; sys.exit(not m.__file__.startswith(sys.argv[1]))' "$check"
-          "$GITHUB_WORKSPACE/.venv/bin/pytest" -q -p no:cacheprovider
+      - name: Install
+        run: python3 -m venv .venv && .venv/bin/pip3 install -e '.[dev]'
+      # Builds yarbie.zip and runs the tests against it unzipped, as locally.
+      - name: Zip the integration and test the zip
+        run: scripts/check.sh zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: yarbie.zip
