@@ -94,3 +94,7 @@ jobs:
       - uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
         with:
           category: integration
+          # Open items for the repository's owner, not the code: a license (GitHub
+          # Settings or a LICENSE file), topics (repository About), and a brand icon at
+          # custom_components/yarbie/brand/icon.png. Drop each from this list once done.
+          ignore: brands license topics
