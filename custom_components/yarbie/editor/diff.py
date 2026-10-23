@@ -7,8 +7,6 @@ from dataclasses import asdict, dataclass, field
 import math
 from typing import Any, Literal
 
-from .._vendor.yarbo_local.models import local_to_wgs84
-
 from .mapdoc import (
     LocalPoint,
     Ref,
@@ -17,6 +15,7 @@ from .mapdoc import (
     geometry_to_local,
     is_closed_ring,
     local_points,
+    lonlat,
     parse_ref,
     same_outline,
     site_reference,
@@ -75,7 +74,7 @@ class Op:
         out["warnings"] = [
             {
                 "text": w.text,
-                "points": [_lonlat(self.ref, x, y) for x, y in w.points] if self.ref else [],
+                "points": [lonlat(self.ref, x, y) for x, y in w.points] if self.ref else [],
             }
             for w in self.warnings
         ]
@@ -83,11 +82,6 @@ class Op:
 
     def warn(self, text: str, points: Sequence[tuple[float, float]] = ()) -> None:
         self.warnings.append(Warning(text, list(points)))
-
-
-def _lonlat(ref: Ref, x: float, y: float) -> list[float]:
-    lat, lon = local_to_wgs84(ref, x, y)
-    return [round(lon, 9), round(lat, 9)]
 
 
 def _records(raw: Mapping[str, Any], family: str) -> dict[str, Mapping[str, Any]]:
@@ -268,9 +262,7 @@ def _check(ops: list[Op], raw: Mapping[str, Any]) -> None:
                 if op.kind == "update":
                     record = _records(raw, op.family).get(op.key) or {}
                     before = crossings(_open_ring([(x, y) for x, y, _ in local_points(record)]))
-                added = [
-                    p for p in crossings(ring) if all(math.dist(p, q) > CROSSING_SAME_M for q in before)
-                ]
+                added = new_crossings(ring, before)
                 if added:
                     where = "one place" if len(added) == 1 else f"{len(added)} places"
                     op.warn(
@@ -326,6 +318,11 @@ def _dock_links_after(
 CROSSING_SAME_M = 0.05
 
 Pt = tuple[float, float]
+
+
+def new_crossings(ring: Sequence[Pt], before: Sequence[Pt]) -> list[Pt]:
+    """Where ``ring`` crosses itself other than where it did already (``before``)."""
+    return [p for p in crossings(ring) if all(math.dist(p, q) > CROSSING_SAME_M for q in before)]
 
 
 def crossings(ring: Sequence[Pt]) -> list[Pt]:

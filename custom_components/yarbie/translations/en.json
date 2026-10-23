@@ -46,11 +46,15 @@
           "keep_awake": "Keep the robot awake",
           "scan": "Network to scan if the robot moves",
           "google_maps_key": "Google Maps key (satellite imagery in the Yard editor)",
-          "run_retention_days": "Keep run records for (days)"
+          "run_retention_days": "Keep run records for (days)",
+          "smoothing_tolerance_in": "Smoothing tolerance (inches)",
+          "smoothing_tolerance_cm": "Smoothing tolerance (centimetres)"
         },
         "data_description": {
           "observe_only": "For running beside another integration: reads only, never takes the robot's controller.",
-          "keep_awake": "Sends the wake command every minute. It takes the controller."
+          "keep_awake": "Sends the wake command every minute. It takes the controller.",
+          "smoothing_tolerance_in": "How far the Yard editor's \"Smooth outline\" may move a line. Areas only shrink and no-go zones only grow.",
+          "smoothing_tolerance_cm": "How far the Yard editor's \"Smooth outline\" may move a line. Areas only shrink and no-go zones only grow."
         }
       }
     }

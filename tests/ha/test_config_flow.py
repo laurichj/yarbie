@@ -17,6 +17,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
+from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
 
 class Network:
@@ -156,3 +157,60 @@ async def test_options_flow(hass: HomeAssistant, entry: MockConfigEntry) -> None
     await hass.async_block_till_done()
     assert entry.options["allow_writes"] is False
     assert not entry.runtime_data.writable
+
+
+def _fields(result: Any) -> dict[str, Any]:
+    schema = result["data_schema"]
+    assert schema is not None
+    return {str(k): k for k in schema.schema}
+
+
+async def test_smoothing_tolerance_is_asked_in_the_users_units(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    keys = _fields(result)
+    assert "smoothing_tolerance_cm" in keys and "smoothing_tolerance_in" not in keys
+    assert keys["smoothing_tolerance_cm"].default() == 15.2
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"smoothing_tolerance_cm": 10}
+    )
+    await hass.async_block_till_done()
+    assert entry.options["smoothing_tolerance_m"] == 0.1
+    assert "smoothing_tolerance_cm" not in entry.options
+
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    keys = _fields(result)
+    assert keys["smoothing_tolerance_in"].default() == 3.9
+    await hass.config_entries.options.async_configure(result["flow_id"], {"smoothing_tolerance_in": 6})
+    await hass.async_block_till_done()
+    assert entry.options["smoothing_tolerance_m"] == 0.1524
+
+
+async def test_saving_other_options_keeps_the_tolerance_exact(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """0.1524 m shows as 15.2 cm; saving something else must not store 0.152 m."""
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert _fields(result)["smoothing_tolerance_cm"].default() == 15.2
+    await hass.config_entries.options.async_configure(result["flow_id"], {"run_retention_days": 30})
+    await hass.async_block_till_done()
+    assert entry.options["smoothing_tolerance_m"] == 0.1524
+    assert entry.options["run_retention_days"] == 30
+
+
+async def test_a_tolerance_outside_the_units_range_is_shown_inside_it(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """The form must not offer a default its own range refuses."""
+    hass.config_entries.async_update_entry(entry, options={**entry.options, "smoothing_tolerance_m": 5.0})
+    await hass.async_block_till_done()
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert _fields(result)["smoothing_tolerance_in"].default() == 35.4
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    # Left as shown, what was shown is kept: the stored value was out of range.
+    assert entry.options["smoothing_tolerance_m"] == round(35.4 * 0.0254, 4)

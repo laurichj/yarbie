@@ -93,7 +93,7 @@ def dock_point(raw: Mapping[str, Any]) -> tuple[float, float] | None:
     return None
 
 
-def _lonlat(ref: Ref, x: float, y: float) -> list[float]:
+def lonlat(ref: Ref, x: float, y: float) -> list[float]:
     lat, lon = local_to_wgs84(ref, x, y)
     return [round(lon, 9), round(lat, 9)]
 
@@ -110,7 +110,7 @@ def to_feature_collection(raw: Mapping[str, Any], reference: Ref | None) -> dict
             pts = local_points(record)
             if ref is None or not pts:
                 continue
-            coords = [_lonlat(ref, x, y) for x, y, _ in pts]
+            coords = [lonlat(ref, x, y) for x, y, _ in pts]
             if family in POLYGON_FAMILIES:
                 if len(coords) < 3:
                     continue
@@ -150,7 +150,7 @@ def to_feature_collection(raw: Mapping[str, Any], reference: Ref | None) -> dict
                     "id": feature_key("dock", dock.get("id")),
                     "geometry": {
                         "type": "Point",
-                        "coordinates": _lonlat(site_ref, float(point["x"]), float(point["y"])),
+                        "coordinates": lonlat(site_ref, float(point["x"]), float(point["y"])),
                     },
                     "properties": {"family": "dock", "id": dock.get("id"), "name": "Dock"},
                 }

@@ -19,7 +19,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from . import schedules
 from ._vendor.yarbo_local.exceptions import YarboError
 from ._vendor.yarbo_local.payloads import APP_MOWER_AREA_KEYS
-from .const import DOMAIN, OPT_GOOGLE_MAPS_KEY
+from .const import DOMAIN, OPT_GOOGLE_MAPS_KEY, SMOOTHING_LIMITS_M
 from .coordinator import YarbieCoordinator
 from .editor import mapdoc, routes, runs
 from .editor.service import AREA_SETTING_KEYS, ConflictError, ReadOnlyError
@@ -115,6 +115,7 @@ async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
             "battery": state.battery,
             "position": position,
             "map_stale": c.map_stale,
+            "smoothing": c.smoothing,
         },
     )
 
@@ -132,6 +133,28 @@ async def ws_preview(hass: HomeAssistant, connection: websocket_api.ActiveConnec
     c = _coordinator(hass, msg)
     ops = await c.service.preview(msg["features"])
     connection.send_result(msg["id"], {"ops": [op.public() for op in ops], "writable": c.writable})
+
+
+@_command(
+    {
+        probatio.Required("type"): "yarbie/smooth",
+        probatio.Required("features"): dict,
+        probatio.Required("ids"): [str],
+        probatio.Optional("tolerance_m"): probatio.All(
+            probatio.Coerce(float), probatio.Range(min=SMOOTHING_LIMITS_M[0], max=SMOOTHING_LIMITS_M[1])
+        ),
+        probatio.Optional("arcs", default=True): bool,
+        probatio.Optional("keep_shared", default=True): bool,
+    }
+)
+async def ws_smooth(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Proposed outlines with fewer points; the panel shows them as edits to review."""
+    c = _coordinator(hass, msg)
+    tolerance = msg.get("tolerance_m", c.smoothing["tolerance_m"])
+    results = await c.service.smooth(
+        msg["features"], msg["ids"], tolerance, arcs=msg["arcs"], keep_shared=msg["keep_shared"]
+    )
+    connection.send_result(msg["id"], {"tolerance_m": tolerance, "results": results})
 
 
 @_command(
@@ -534,7 +557,7 @@ def ws_job_subscribe(
 
 
 COMMANDS = (
-    ws_info, ws_map, ws_preview, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
+    ws_info, ws_map, ws_preview, ws_smooth, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
     ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_schedules,
     ws_schedule_save, ws_schedule_delete, ws_areas, ws_area_params, ws_area_params_save,
     ws_area_settings, ws_area_settings_apply, ws_runs, ws_run, ws_route_start, ws_job_get,

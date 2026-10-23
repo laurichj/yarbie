@@ -396,6 +396,9 @@ Each phase ends with `pytest`, `ty check`, and the frontend typecheck passing.
 
 ## TODO
 
+Outline smoothing (fewer points, rounder curves, areas only shrink and no-go zones only
+grow) has its own design: `area-smoothing.md`.
+
 ### 1. Run history page
 
 A **Runs** tab in the panel, and a dashboard-friendly summary.
