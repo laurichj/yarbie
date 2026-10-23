@@ -594,6 +594,15 @@ async function apply() {
       say(`Sent ${result.applied.length} change(s) to the robot.`, "ok");
     }
     if (result.backup) offerUndoApply(result.backup);
+    if (result.reload) {
+      // What was sent is on the robot; what the editor holds is not the robot's map now.
+      say(`Sent ${result.applied.length} change(s), but ${result.reload}.`, "error");
+      try {
+        await reload(false);
+      } catch {
+        // the message above already says to reload
+      }
+    }
     await refreshHistory();
   } catch (err) {
     say(message(err), "error");
@@ -616,6 +625,7 @@ function setRunActive(active: boolean) {
   runActive = active;
   $("run-section").hidden = !active;
   void refreshRun();
+  void refreshPlans(); // Route is off while a plan runs
 }
 
 async function refreshRun() {
@@ -1130,7 +1140,7 @@ async function refreshPlans() {
           (p) => `<li data-plan="${p.id}" class="${shownRoute === p.id ? "showing" : ""}">
             <div><b>${esc(p.name)}</b><div class="meta">${p.area_ids.map((a) => esc(areaName(a))).join(", ")}</div>${routeLine(p.id)}</div>
             <span class="row" style="margin:0">
-              <button data-route="${p.id}" title="Show the route the robot would take" ${routeStatus.get(p.id)?.kind === "computing" ? "disabled" : ""}>${routeButton(p.id)}</button>
+              <button data-route="${p.id}" title="${status?.busy && shownRoute !== p.id ? "Not while a plan runs or is paused" : "Show the route the robot would take"}" ${routeStatus.get(p.id)?.kind === "computing" || (status?.busy && shownRoute !== p.id) ? "disabled" : ""}>${routeButton(p.id)}</button>
               <button data-edit="${p.id}">Edit</button>
             </span>
           </li>`,

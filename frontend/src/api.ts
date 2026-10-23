@@ -67,7 +67,8 @@ export interface ApplyResult {
   skipped: Op[];
   error?: string | null;
   backup: string | null;
-  map?: MapResponse;
+  map?: MapResponse | null;
+  reload?: string; // sent, but the map could not be read back
 }
 
 /** A photo source for the map background. */
