@@ -1,0 +1,93 @@
+# The checks every change must pass, and yarbie.zip as a workflow artifact (the
+# release workflow runs this too and publishes that zip).
+name: CI
+
+on:
+  # Pushes to main and pull requests, so a push to a PR's branch runs CI once, not twice.
+  # Tags go through release.yml, which calls this.
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A newer push to a branch cancels its older run. (Called from release.yml, github.workflow
+# is "Release", so a release never shares a group with, or cancels, a branch's CI.)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  PYTHON_VERSION: "3.14"  # Home Assistant 2026.10's
+  NODE_VERSION: "24"
+
+jobs:
+  python:
+    name: pytest, ty, vendored yarbo-local
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: python3 -m venv .venv && .venv/bin/pip3 install -e '.[dev]'
+      # On a fresh checkout, so a file missing from git fails here, not on someone's HA.
+      - name: pytest
+        run: .venv/bin/pytest -q
+      - name: ty
+        run: .venv/bin/ty check custom_components tests
+      - name: Vendored yarbo-local is current and committed
+        run: python3 scripts/vendor_yarbo_local.py --check
+
+  package:
+    name: frontend, yarbie.zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Build the frontend
+        working-directory: frontend
+        run: npm ci && npm run typecheck && npm run build
+      - name: Install
+        run: python3 -m venv .venv && .venv/bin/pip3 install -e '.[dev]'
+      # Builds yarbie.zip and runs the tests against it unzipped, as locally.
+      - name: Zip the integration and test the zip
+        run: scripts/check.sh zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: yarbie.zip
+          path: yarbie.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: home-assistant/actions/hassfest@cd6f3635a740c84d8a14f6121a90068b8ece6bf6 # master, 2026-10-17
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
+        with:
+          category: integration
+          # Open items for the repository's owner, not the code: a license (GitHub
+          # Settings or a LICENSE file), topics (repository About), and a brand icon at
+          # custom_components/yarbie/brand/icon.png. Drop each from this list once done.
+          ignore: brands license topics

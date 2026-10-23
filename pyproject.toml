@@ -15,7 +15,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ty", "pytest-homeassistant-custom-component"]
+# Pinned so CI and every checkout test against the same Home Assistant: each
+# pytest-homeassistant-custom-component release pins one (0.13.373 is HA 2026.10.2).
+dev = ["pytest>=8", "ty==0.0.89", "pytest-homeassistant-custom-component==0.13.373"]
 
 [tool.setuptools]
 packages = []

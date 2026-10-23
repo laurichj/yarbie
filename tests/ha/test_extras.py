@@ -131,7 +131,10 @@ async def test_blueprints_are_valid(hass: HomeAssistant) -> None:
         "job_complete": {"plan_event": "event.yarbo_plan", "notify": notify},
     }
     folder = Path(__file__).parents[2] / "blueprints" / "automation" / "yarbie"
-    for path in sorted(folder.glob("*.yaml")):
+    paths = sorted(folder.glob("*.yaml"))
+    # Found none would pass silently, as it did when CI tested a copy without blueprints/.
+    assert sorted(p.stem for p in paths) == sorted(samples), folder
+    for path in paths:
         blueprint = Blueprint(
             load_yaml_dict(str(path)), expected_domain="automation", schema=AUTOMATION_BLUEPRINT_SCHEMA
         )
