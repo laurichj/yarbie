@@ -3,11 +3,12 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 // Bundle MapLibre's worker (it renders GeoJSON) so it is served with the app.
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-import { api, ApiError, type Family, type Heatmap, type Imagery, type Progress, type MapFeature, type MapResponse, type Op, type Plan, type Run, type Status } from "./api";
+import { api, ApiError, type Family, type Heatmap, type Imagery, type Progress, type MapFeature, type MapResponse, type Op, type Plan, type Run, type Smoothed, type Smoothing, type Status } from "./api";
 import { COLORS, Editor, EDITABLE, type Tool } from "./editor";
 import { debugLog, installDebug } from "./debug";
 import { settingsForm, trackChanges } from "./areaSettings";
 import { bounds, circle, circleFit, metresToOffset, shiftGeometry, type Offset } from "./geo";
+import { changes, choices, controls, DEFAULT_SMOOTHING, readControls, SMOOTHABLE, summary, tolerance } from "./smoothing";
 
 
 const ESRI = "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community";
@@ -69,6 +70,11 @@ let routeTicker: number | undefined;
 let selectedId: string | null = null;
 let armedApply = false;
 let offsetMetres: [number, number] = loadOffset(imagery);
+// Smoothed outlines on show, not yet taken as edits; and those ticked in "Smooth all".
+let smoothPending: Smoothed[] = [];
+const smoothFrom = new Map<string, string>(); // the outline each was worked out from
+const smoothTicked = new Set<string>();
+let smoothAllOpen = false;
 
 // -- map
 
@@ -117,6 +123,7 @@ map.on("load", async () => {
   map.addSource("labels", { type: "geojson", data: empty });
   map.addSource("robot", { type: "geojson", data: empty });
   map.addSource("problems", { type: "geojson", data: empty });
+  map.addSource("smooth", { type: "geojson", data: empty });
   map.addSource("heat", { type: "geojson", data: empty });
   map.addSource("run", { type: "geojson", data: empty });
   map.addSource("past-run", { type: "geojson", data: empty });
@@ -191,6 +198,22 @@ map.on("load", async () => {
       "circle-stroke-width": 3,
     },
   });
+  // A smoothed outline being previewed, over the one it would replace.
+  map.addLayer({
+    id: "smooth-line",
+    type: "line",
+    source: "smooth",
+    filter: ["==", ["geometry-type"], "LineString"],
+    paint: { "line-color": "#f2cc60", "line-width": 2.5, "line-dasharray": [2, 1] },
+  });
+  map.addLayer({
+    id: "smooth-points",
+    type: "circle",
+    source: "smooth",
+    filter: ["==", ["geometry-type"], "Point"],
+    minzoom: 18,
+    paint: { "circle-radius": 3, "circle-color": "#f2cc60", "circle-stroke-color": "#0d1117", "circle-stroke-width": 1 },
+  });
   // The run: the route mowed so far as a swath about a cut wide, the rest as a thin line.
   map.addLayer({
     id: "run-left",
@@ -237,6 +260,7 @@ map.on("load", async () => {
   editor.onChange(onEdit);
   editor.onSelect((id) => {
     selectedId = id;
+    if (!smoothAllOpen) clearSmooth();
     renderSelection();
   });
   buildLayerToggles();
@@ -325,6 +349,7 @@ function applyOffset() {
   (map.getSource("static") as GeoJSONSource).setData({ type: "FeatureCollection", features: staticFeatures() });
   updateLabels();
   drawProblems();
+  drawSmooth();
   drawHeat();
   drawRun();
   if (shownRoute !== null) void showRoute(shownRoute);
@@ -449,6 +474,7 @@ function onEdit() {
   ($("redo") as HTMLButtonElement).disabled = !editor.canRedo();
   disarmApply();
   updateLabels();
+  dropStaleSmooth();
   if (selectedId) renderSelection();
   window.clearTimeout(previewTimer);
   previewTimer = window.setTimeout(refreshOps, 350);
@@ -843,6 +869,7 @@ function renderSelection() {
           }</select></label>`
         : ""
     }
+    ${smoothable(feature) ? smoothFieldset(feature) : ""}
     ${
       p.family === "nogozones" && feature.geometry.type === "Polygon"
         ? `<fieldset><legend>Make it a circle</legend>
@@ -880,6 +907,7 @@ function renderSelection() {
   $("sel-pattern")?.addEventListener("change", (e) =>
     editor.updateProperties(id, { algorithm_type: Number((e.target as HTMLSelectElement).value) }),
   );
+  if (smoothable(feature)) wireSmoothFieldset(feature);
   if (p.family === "nogozones" && feature.geometry.type === "Polygon") {
     const fit = circleFit(feature.geometry.coordinates[0]);
     const radius = $("circle-r") as HTMLInputElement;
@@ -914,6 +942,193 @@ function renderSelection() {
     renderSelection();
   });
   if (p.family === "areas" && p.id !== null) void renderParams(p.id);
+}
+
+// -- smoothing: proposed outlines shown over the map until taken as edits or dropped
+
+function smoothing(): Smoothing {
+  return status?.smoothing ?? DEFAULT_SMOOTHING;
+}
+
+function smoothable(feature: MapFeature): boolean {
+  return SMOOTHABLE.includes(feature.properties.family) && feature.geometry.type === "Polygon";
+}
+
+function drawSmooth() {
+  const offset = currentOffset();
+  const features: GeoJSON.Feature[] = [];
+  for (const r of smoothPending.filter(changes)) {
+    const ring = shiftGeometry(r.geometry, offset).coordinates[0];
+    features.push({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: ring } });
+    for (const c of ring.slice(0, -1)) features.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } });
+  }
+  (map.getSource("smooth") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features });
+  // Over the editor's own layers, which it adds after these: the two outlines are within
+  // inches of each other.
+  if (features.length && map.getLayer("smooth-line")) {
+    map.moveLayer("smooth-line");
+    map.moveLayer("smooth-points");
+  }
+}
+
+function clearSmooth() {
+  if (!smoothPending.length) return;
+  smoothPending = [];
+  smoothTicked.clear();
+  drawSmooth();
+}
+
+/** Drop previews of outlines edited since: they were worked out from the old shape. */
+function dropStaleSmooth() {
+  const fresh = smoothPending.filter((r) => JSON.stringify(editor.feature(r.id)?.geometry) === smoothFrom.get(r.id));
+  if (fresh.length === smoothPending.length) return;
+  smoothPending = fresh;
+  for (const id of [...smoothTicked]) if (!fresh.some((r) => r.id === id)) smoothTicked.delete(id);
+  drawSmooth();
+  if (smoothAllOpen) renderSmoothAll();
+}
+
+async function proposeSmooth(ids: string[]): Promise<boolean> {
+  try {
+    const { results } = await api.smooth(editor.collection(), ids, tolerance(smoothing()), choices.arcs, choices.keepShared);
+    smoothPending = results;
+    smoothFrom.clear();
+    for (const r of results) smoothFrom.set(r.id, JSON.stringify(editor.feature(r.id)?.geometry));
+    drawSmooth();
+    return true;
+  } catch (err) {
+    say(`Could not smooth: ${message(err)}`, "error");
+    return false;
+  }
+}
+
+/** Take smoothed outlines as edits (one undo step). How many changed. */
+function useSmoothed(results: Smoothed[]): number {
+  const geometries = new Map<string, MapFeature["geometry"]>(results.filter(changes).map((r) => [r.id, r.geometry]));
+  clearSmooth();
+  if (geometries.size) editor.setGeometries(geometries);
+  return geometries.size;
+}
+
+function smoothFieldset(feature: MapFeature): string {
+  const family = feature.properties.family;
+  const s = smoothing();
+  const pending = smoothPending.find((r) => r.id === feature.id);
+  return `<fieldset><legend>Smooth outline</legend>
+    <p class="hint" style="margin-top:0">Fewer points and rounder curves. ${
+      family === "areas" ? "The area only gets smaller." : "The zone only gets bigger."
+    }</p>
+    ${controls("sm", s, family === "areas")}
+    <div class="row"><button id="sm-preview">${pending ? "Preview again" : "Preview"}</button></div>
+    ${
+      pending
+        ? `<p class="facts" style="margin-top:8px">${esc(summary(pending, family, s))}</p>
+          <div class="row"><button id="sm-use" class="primary" ${changes(pending) ? "" : "disabled"}>Use smoothed outline</button>
+          <button id="sm-discard">Discard</button></div>`
+        : ""
+    }</fieldset>`;
+}
+
+function wireSmoothFieldset(feature: MapFeature) {
+  const id = feature.id;
+  const name = feature.properties.name || "the outline";
+  $("sm-preview")?.addEventListener("click", async (e) => {
+    if (!readControls("sm", smoothing())) return say(`Give how far a line may move, in ${smoothing().unit}.`, "error");
+    const button = e.currentTarget as HTMLButtonElement;
+    button.disabled = true;
+    button.textContent = "Working…";
+    await proposeSmooth([id]);
+    renderSelection();
+  });
+  $("sm-use")?.addEventListener("click", () => {
+    const r = smoothPending.find((x) => x.id === id);
+    if (!r) return;
+    const text = summary(r, feature.properties.family, smoothing());
+    useSmoothed([r]);
+    say(`Smoothed ${name}: ${text}. It is a change to review and apply like any other.`, "ok");
+  });
+  $("sm-discard")?.addEventListener("click", () => {
+    clearSmooth();
+    renderSelection();
+  });
+}
+
+function renderSmoothAll() {
+  const box = $("smooth-all");
+  box.hidden = !smoothAllOpen;
+  ($("smooth-all-open") as HTMLButtonElement).classList.toggle("active", smoothAllOpen);
+  if (!smoothAllOpen) return;
+  const s = smoothing();
+  const shown = smoothPending.filter(changes);
+  const family = (id: string) => editor.feature(id)?.properties.family ?? "areas";
+  const rows = shown
+    .map((r) => {
+      const f = editor.feature(r.id);
+      return `<li><label class="check" style="align-items:flex-start;margin:0">
+        <input type="checkbox" data-smooth="${esc(r.id)}" ${smoothTicked.has(r.id) ? "checked" : ""}/>
+        <span><a href="#" data-smooth-show="${esc(r.id)}"><i class="sw ${family(r.id)}"></i>${esc(f?.properties.name || r.id)}</a>
+        <br><span class="hint">${esc(summary(r, family(r.id), s))}</span></span></label></li>`;
+    })
+    .join("");
+  const total = (fam: Family) => {
+    const of = smoothPending.filter((r) => family(r.id) === fam);
+    const before = of.reduce((n, r) => n + r.stats.before, 0);
+    const after = of.reduce((n, r) => n + r.stats.after, 0);
+    return of.length ? `${fam === "areas" ? "Areas" : "No-go zones"}: ${before.toLocaleString()} → ${after.toLocaleString()} points` : "";
+  };
+  box.innerHTML = `<fieldset><legend>Smooth every area and no-go zone</legend>
+    <p class="hint" style="margin-top:0">Areas only get smaller and no-go zones only bigger. Nothing goes to the robot until you apply the changes.</p>
+    ${controls("sa", s, true)}
+    <div class="row"><button id="sa-preview">${smoothPending.length ? "Preview again" : "Preview"}</button><button id="sa-close">Close</button></div>
+    ${
+      smoothPending.length
+        ? `<p class="facts" style="margin-top:8px">${[total("areas"), total("nogozones")].filter(Boolean).join(" · ")}${
+            shown.length < smoothPending.length ? ` · ${smoothPending.length - shown.length} already as simple as this allows` : ""
+          }</p>
+          <ul class="plans">${rows}</ul>
+          <div class="row"><button id="sa-use" class="primary" ${smoothTicked.size ? "" : "disabled"}>Use ticked (${smoothTicked.size})</button></div>`
+        : ""
+    }</fieldset>`;
+  $("sa-preview").addEventListener("click", async (e) => {
+    if (!readControls("sa", s)) return say(`Give how far a line may move, in ${s.unit}.`, "error");
+    const button = e.currentTarget as HTMLButtonElement;
+    button.disabled = true;
+    button.textContent = "Working…";
+    const ids = editor.features().filter(smoothable).map((f) => f.id);
+    if (await proposeSmooth(ids)) {
+      smoothTicked.clear();
+      for (const r of smoothPending.filter(changes)) smoothTicked.add(r.id);
+    }
+    renderSmoothAll();
+  });
+  $("sa-close").addEventListener("click", () => {
+    smoothAllOpen = false;
+    clearSmooth();
+    renderSmoothAll();
+  });
+  box.querySelectorAll<HTMLInputElement>("input[data-smooth]").forEach((input) =>
+    input.addEventListener("change", () => {
+      if (input.checked) smoothTicked.add(input.dataset.smooth!);
+      else smoothTicked.delete(input.dataset.smooth!);
+      const use = $("sa-use") as HTMLButtonElement;
+      use.disabled = !smoothTicked.size;
+      use.textContent = `Use ticked (${smoothTicked.size})`;
+    }),
+  );
+  box.querySelectorAll<HTMLAnchorElement>("a[data-smooth-show]").forEach((a) =>
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const f = editor.feature(a.dataset.smoothShow!);
+      const extent = f ? bounds([{ geometry: shiftGeometry(f.geometry, currentOffset()) }]) : null;
+      if (extent) map.fitBounds(extent, { padding: 60, maxZoom: 21 });
+    }),
+  );
+  $("sa-use")?.addEventListener("click", () => {
+    const n = useSmoothed(smoothPending.filter((r) => smoothTicked.has(r.id)));
+    smoothAllOpen = false;
+    renderSmoothAll();
+    say(`Smoothed ${n} outline${n === 1 ? "" : "s"}. They are changes to review and apply like any other; Undo takes them all back.`, "ok");
+  });
 }
 
 // -- moving a no-go zone by steps, like the imagery alignment
@@ -1419,6 +1634,12 @@ function wireControls() {
     await refreshPlans();
   });
   $("fit").addEventListener("click", fitToMap);
+  $("smooth-all-open").addEventListener("click", () => {
+    smoothAllOpen = !smoothAllOpen;
+    clearSmooth();
+    renderSmoothAll();
+    if (selectedId) renderSelection();
+  });
   $("apply").addEventListener("click", apply);
   $("export").addEventListener("click", exportGeoJSON);
   $("import").addEventListener("change", importGeoJSON);

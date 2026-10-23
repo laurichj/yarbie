@@ -1,8 +1,10 @@
 # Smoothing area and no-go outlines
 
-Status: the algorithm is built and tested (`custom_components/yarbie/editor/smooth.py`,
-`tests/ha/test_smooth.py`). It has been tried on the real map with
-`scripts/smooth_report.py`. The panel wiring (phase 2 below) is not built yet.
+Status: built. The algorithm is in `custom_components/yarbie/editor/smooth.py`, served
+by `yarbie/smooth`, and set from the options flow. In the Yard editor it is
+"Smooth outline" on the Selected tab and "Smooth all…" under Draw. It was tried on the
+real map with `scripts/smooth_report.py` and on the simulator in a running HA. Not yet
+done: the one-area trial on the robot (risk 1 below).
 
 ## Problem
 
@@ -91,9 +93,20 @@ own `ref`, as `diff.py` does, so untouched points come back exactly.
 
    If an arc fails, its run falls back to straight edges; if those fail, it keeps the
    original points.
+
+   The crossing test has no slack, even though the outlines are rounded to the
+   millimetre. An earlier version let an edge through if it passed within 2 mm of a
+   corner. On North Garden Fence at 12 in, one edge grazed two corners that way while the
+   driven line dipped inside between them, which left a 0.03 m² sliver outside the
+   area.
 7. **Check the whole outline.** If the assembled outline crosses itself anywhere the
    original didn't, the pieces at that crossing fall back one step (arc → straight →
    original), and the check repeats.
+8. **Tidy the joins.** Try dropping each corner that is within one tolerance of a
+   neighbour (mostly where an arc meets a straight piece). Pinned points are never
+   dropped. A corner goes only if the shortcut passes the same checks: it crosses
+   nothing, it stays on the allowed side, and it stays within the tolerance of every
+   driven point nearby.
 
 Why one-sided DP and not offsetting the outline first: offsetting a self-crossing
 1,200-point ring needs a geometry library (shapely/GEOS). The integration's only
@@ -111,34 +124,38 @@ Each result was checked separately with shapely:
 
 | Tolerance | Area points | No-go points | Largest move | Area lost (largest) |
 |---|---|---|---|---|
-| 3 in | 3,334 → 1,877 (−44%) | −2% | 3.0 in | — |
-| **6 in** | **3,334 → 1,572 (−53%)** | **−4%** | **5.9 in** | **Shop −10.1 m² of 2,917 (0.3%)** |
-| 12 in | 3,334 → 1,265 (−62%) | −9% | 11.9 in | — |
-| 6 in, arcs off | 3,334 → 1,497 (−55%) | −5% | 5.9 in | — |
+| 3 in | 3,334 → 1,874 (−44%) | −2% | 3.0 in | — |
+| **6 in** | **3,334 → 1,561 (−53%)** | **−4%** | **5.9 in** | **Shop −10.6 m² of 2,917 (0.4%)** |
+| 12 in | 3,334 → 1,244 (−63%) | −9% | 11.9 in | — |
+| 6 in, arcs off | 3,334 → 1,488 (−55%) | −5% | 5.9 in | — |
 
-At 6 in, per area: Driveway South 764 → 284, Shop 1,228 → 588, Tree net area
-424 → 197, East Garden Fence 245 → 115, South Garden Fence 126 → 63. The three largest
-areas take 0.2–0.5 s each in pure Python.
+At 6 in, per area: Driveway South 764 → 283, Shop 1,228 → 584, Tree net area
+424 → 195, East Garden Fence 245 → 115, South Garden Fence 126 → 63. The largest area
+takes about 0.5 s in pure Python; "Smooth all" on the whole map takes about 1.5 s.
 
 No-go zones barely change at 6 in because they were drawn coarsely to begin with. A few
 round ones become arcs, and some of those gain points (8 → 10), which is the cost of
 drawing them round. Arcs cost areas about 5% more points overall than straight edges
 alone, in exchange for even curves around beds and trees.
 
-Known rough edge: where an arc meets a straight piece, two or three points can end up a
-few centimetres apart. A last pass that tries removing each join point, checked the same
-way, would tidy this up (phase 3).
+Known rough edge: on a wobbly straight edge, two or three kept points can sit a few
+centimetres apart. These are the innermost wobbles (for an area), and they can't be
+dropped: removing one would put a driven point inside the new outline, so the area
+would grow. The tidy pass leaves them for that reason. Fitting a straight line through
+the wobble and shifting it inward would remove them, but it means new points instead of
+driven ones, and that's a separate change.
 
 ## Units and settings
 
 - The tolerance is stored in metres and shown in the user's HA units. When
-  `hass.config.units` is US customary (in the panel, `hass.config.unit_system.length`
-  is `"mi"`), it is shown in **inches** with a default of 6. In metric it is shown in
-  **centimetres** with a default of 15. HA has no small-length unit, so the larger
-  length unit only decides which of the two to use.
-- The integration options flow gets "Smoothing tolerance", stored in metres as
-  `smoothing_tolerance_m` (default `smooth.DEFAULT_TOLERANCE_M` = 0.1524).
-- The panel can override it for one smoothing run (a number box next to the button). The
+  `hass.config.units` is US customary, it is shown in **inches** with a default of 6
+  (areas are then shown in ft²). In metric it is shown in **centimetres** with a default
+  of 15. HA has no small-length unit, so the unit system only decides which of the two
+  to use (`units.short_length`). `yarbie/info` sends the choice to the panel as
+  `smoothing`.
+- The options flow asks for "Smoothing tolerance (inches)" or "(centimetres)", stored in
+  metres as `smoothing_tolerance_m` (default `smooth.DEFAULT_TOLERANCE_M` = 0.1524).
+- The panel can override it for the session (the number box beside Preview). The
   override isn't saved.
 - Two switches, both on by default: **Round curves** (arcs), and **Keep edges shared with
   other areas**.
@@ -151,27 +168,34 @@ pending edit like any other, so it goes through `yarbie/preview` → Changes →
 check, backup before every apply, busy check, and warnings.
 
 **Websocket:** `yarbie/smooth`
-`{features: [GeoJSON feature…], tolerance_m, arcs, keep_shared}` → for each feature:
-`{id, geometry, stats: Smoothed.public()}`.
+`{features: FeatureCollection, ids: [feature id…], tolerance_m?, arcs, keep_shared}` →
+`{tolerance_m, results: [{id, geometry, stats: Smoothed.public()}…]}`.
 
-- It takes the features as they are in the editor, so it smooths unsent edits too.
-  It converts each one with its zone's `ref`, like `diff._update`.
-- Keep points (pathway ends and the dock) come from the current map. Neighbours are the
-  other areas' outlines, as edited.
+- It takes the whole edited map, so it smooths unsent edits too. It converts each
+  outline with its zone's `ref`, like `diff._update`.
+- Points to keep are the pathway and sidewalk ends (as edited) and the dock. Neighbours
+  are the other areas' outlines, as edited.
+- It uses the map last read (for references and the dock), so it doesn't ask the robot
+  again.
 - The work runs in `asyncio.to_thread`, which keeps the event loop free on big maps.
 - It needs an admin, like every editor command, but it doesn't need writes to be
   enabled: it is read-only.
 
-**Panel:**
-- **Selected tab:** a "Smooth outline" fieldset for areas and no-go zones. It shows the
-  tolerance in the user's units and a one-line summary, e.g. "1,228 → 588 points, 10 m²
-  smaller, at most 5.8 in", with Apply/Discard. While it's open, the proposed outline is
-  drawn over the current one.
-- **Tools:** "Smooth all…" smooths every area and no-go zone. It shows a list of what
-  each would change and applies the ones that are ticked. Each one goes into the
-  editor's undo history as a separate edit.
+**Panel** (`frontend/src/smoothing.ts`, wired in `main.ts`):
+- **Selected tab:** a "Smooth outline" fieldset for areas and no-go zones. It has the
+  tolerance in the user's units, Round curves, and Keep edges shared with other areas.
+  Preview draws the proposed outline in dashed yellow and shows a summary, e.g.
+  "179 → 26 points · 17 ft² smaller · moves at most 3.5 in · 1 arc". Then it offers
+  "Use smoothed outline" or Discard.
+- **Draw → "Smooth all…":** previews every area and no-go zone at once. It lists each
+  outline that would change (ticked by default) with its summary and totals; clicking a
+  name zooms to it. "Use ticked (N)" takes them all as **one** undo step.
+- A preview is dropped as soon as its outline is edited, because it was worked out from
+  the old shape.
 - The diff's "Area reshapes … rarely verified" warning still shows for every smoothed
   area. That's correct: see the risks below.
+- Known cosmetic issue: while an area is selected, the editor's corner handles are drawn
+  over the dashed preview line.
 
 ## Risks and open questions
 
@@ -200,7 +224,9 @@ check, backup before every apply, busy check, and warnings.
 
 1. *(done)* `editor/smooth.py`, its tests, and `scripts/smooth_report.py` to try it on a
    backup.
-2. `yarbie/smooth` websocket command, the option in the options flow, the Selected-tab
-   action, and the translations. Then do the one-area trial on the robot (risk 1).
-3. "Smooth all…" and the cleanup pass for arc joins. Optionally a two-sided pass for
-   pathways and sidewalks that keeps the dock-linked first point.
+2. *(done)* `yarbie/smooth`, the option in the options flow, the Selected-tab action,
+   and the translations. **Still to do:** the one-area trial on the robot (risk 1).
+3. *(done)* "Smooth all…" and the tidy pass for joins.
+4. Later, if wanted:
+   - fit straight runs as shifted lines, to remove the remaining clusters;
+   - a two-sided pass for pathways and sidewalks that keeps the dock-linked first point.

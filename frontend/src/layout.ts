@@ -36,7 +36,9 @@ export const LAYOUT = `
             <button id="redo" disabled title="Redo (Shift+Ctrl/Cmd+Z)">Redo</button>
             <button id="reload" title="Reload the map from the robot (keeps nothing you haven't sent)">Reload</button>
             <button id="fit">Zoom to map</button>
+            <button id="smooth-all-open" title="Fewer points and rounder curves for every area and no-go zone">Smooth all…</button>
           </div>
+          <div id="smooth-all" hidden></div>
           <p class="hint" id="tool-hint">Click a shape to select it. Drag its corners; drag a midpoint to add one; right-click a corner to delete it.</p>
         </section>
 

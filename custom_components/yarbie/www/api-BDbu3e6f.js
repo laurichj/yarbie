@@ -66,11 +66,19 @@ var o = {
 			busy: e.busy,
 			firmware: e.firmware,
 			position: e.position,
-			error: e.read_only_reason ?? void 0
+			error: e.read_only_reason ?? void 0,
+			smoothing: e.smoothing
 		};
 	},
 	map: () => i("map"),
 	preview: (e) => i("preview", { features: e }),
+	smooth: (e, t, n, r, a) => i("smooth", {
+		features: e,
+		ids: t,
+		tolerance_m: n,
+		arcs: r,
+		keep_shared: a
+	}),
 	apply: (e, t) => i("apply", {
 		features: e,
 		revision: t
