@@ -1,6 +1,58 @@
 # yarbie as a Home Assistant integration
 
-Status: plan · 2026-10-22 · replaces `remote-design.md` (GCP), which is no longer pursued.
+Status: being built · 2026-10-22 · replaces `remote-design.md` (GCP), which is no longer pursued.
+
+## Implementation status
+
+Done on branch `ha-integration` (phases 0–6, checked in a local HA 2026.10.2 with the
+simulator):
+
+- Baseline commit; yarbo-local vendored.
+- The integration: config flow, coordinator, all platforms in the entity table, actions,
+  diagnostics, the firmware repair, the kill switch and observe-only mode.
+- The editor's websocket API and jobs.
+- The panel.
+- The map image entity, blueprints, HACS manifest, `scripts/dev_ha.sh`.
+- The Yarbo dashboard strategy (Settings, Dashboards, Add dashboard, Yarbo).
+- The run history (TODO 1):
+  - the robot's records joined with yarbie's run log in `/config/yarbie/runs`
+  - the panel's Runs section
+  - last-run sensors
+  - a retention option
+
+Where the build differs from the plan below:
+
+- **Vendoring layout.** The subtree holds the whole upstream repo at
+  `third_party/yarbo-local`. `scripts/vendor_yarbo_local.py` copies the package and its
+  `protocol/*.yaml` into `custom_components/yarbie/_vendor/yarbo_local`, the way a wheel
+  would install them. HACS installs only `custom_components/yarbie`, and upstream keeps
+  its data outside the package.
+  - One patch: the data directory is found by package name.
+  - `--check` fails on a stale or hand-edited copy.
+  - The subtree came from upstream at the pinned commit. Later pulls come from the
+    fork, `laurichj/yarbo-local` (remote `yarbo-local`).
+- **No `TESTED_FIRMWARE` constant.** The firmware rail reads the registry's own verified
+  firmware, so there is nothing to keep in sync.
+- **`probatio`, not `voluptuous`.** HA 2026.10's own integrations validate with
+  `probatio`, so yarbie does too.
+- **The panel runs in its own iframe** (`embed_iframe`), so `main.ts` kept its element
+  lookups and styles.
+  - Replies are copied into the iframe before use, because MapLibre's worker refuses
+    objects made in HA's window.
+- **The status pill polls `yarbie/info`.** It is answered from the session's state, so the
+  robot is never asked. It does not read `hass.states`.
+- **No wireless charger output sensors yet.** The scale of those fields is unresolved in
+  the field map.
+
+Not done yet:
+
+- Phase 7 (migration on the real robot). Phase 8 (removing `backend/` and the Docker
+  files) was done ahead of it, before merging.
+- The panel's phone layout and HA theme colours.
+- Entity icons.
+- The error sensor as an enum with translated fault names.
+- The run history shows past runs on today's map. Only the map revision is kept, not a
+  copy of the map as it was.
 
 ## Goal
 
@@ -65,8 +117,8 @@ docs/ha-design.md  docs/mockups/
 ```
 
 `backend/`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` and
-`pyproject.toml`'s server entry points go away once the integration has parity.
-`pyproject.toml` stays for dev tools: pytest, `ty`, and the HA test harness.
+`pyproject.toml`'s server entry points are gone (phase 8). `pyproject.toml` stays for dev
+tools: pytest, `ty`, the HA test harness, and the integration's `aiomqtt` requirement.
 
 ## Library: vendoring and staying in sync
 
@@ -313,7 +365,7 @@ Each phase ends with `pytest`, `ty check`, and the frontend typecheck passing.
    manifest.
 7. **Migration** (the section above).
 8. **Clean up.** Remove `backend/`, the Docker files and the server dependencies, and
-   rewrite the README around the integration.
+   rewrite the README around the integration. Done, ahead of phase 7.
 
 ## TODO
 
@@ -390,6 +442,60 @@ a Pro.
 - **UI:** "Blade load" and "Growth since last cut" layers in the Wear tool, plus
   once-per-run sensors per area ("Back lawn load vs median") for automations such as
   mowing an area early.
+
+### 3. Move plan editing out of the map editor
+
+Plans are a robot setting, not map geometry: which areas, in what order. Today they are
+edited in the Yard editor's Plans section. Move editing to where the robot's other
+controls live, and keep only what needs the map in the editor (route preview, picking
+areas by clicking them).
+
+**Where it goes:**
+- **A plan card on the Yarbo dashboard** (the strategy): the plans with their areas,
+  New, Edit (name and areas as a checklist, then the order), Delete with a confirm, and
+  Start.
+- **The device page**, as far as HA allows: the plan select stays. Add a "Manage plans"
+  link to the dashboard card, because the device page cannot host a custom editor.
+
+**How:**
+- **A custom Lovelace card** (`custom:yarbie-plans-card`), served beside the dashboard
+  strategy and placed in its first column. It uses the existing `yarbie/plans/*`
+  commands, so the backend does not change.
+- Writes keep the same rails: the write lock, the busy check, the kill switch, untested
+  firmware.
+- The Yard editor's Plans section shrinks to a list with **Route** and **Edit on the
+  dashboard**. When a plan's route is shown, its areas are highlighted on the map.
+- **Optional:** with the editor open, clicking areas on the map adds them to the plan
+  being edited, which the card would offer as "Pick on the map".
+
+### 4. Schedule editor
+
+yarbo-local has verified `read_schedules`, `save_schedule` and `del_schedule`. But only a
+*disabled* schedule has ever been stored on a real robot. What `schedule_type`,
+`week_day` (a single day or a bitmask?) and `return_method` mean when a schedule fires is
+not known. The app sent 3, 1 and 2.
+
+**Step 1: learn the fields.**
+- In the Yarbo app, make a few enabled schedules: one weekday; several days; different
+  "return" choices; "resume from last progress" on and off.
+- Capture each with `yarbo-local sniff`.
+- Let one fire, and record what the robot did and what `plan_feedback` and the run
+  history show.
+- Add what was learnt to the fork's `protocol/` (commands and codes), then pull it in.
+
+**Then build:**
+- **Entities:**
+  - A `calendar` entity showing upcoming scheduled runs, so they appear in HA's
+    calendar and automations can see them.
+  - A `switch` per schedule to enable or disable it.
+- **A schedule card** on the Yarbo dashboard: list, add, edit (plan, days, start and end
+  time, return method, resume progress), enable/disable, delete. It sits next to the
+  plan card from TODO 3.
+- **Websocket commands** `yarbie/schedules/list|save|delete`, under the same write rails.
+- **Run history:** a run started by a schedule says so ("started by schedule
+  <name>"). The run log can match the start against the schedule's time.
+- **Rain:** whether to skip a scheduled run when it is raining, as an option, which needs
+  the rain-pause blueprint's logic at start time.
 
 ## Appendix: delta against markus-lassfolk's integration (mower only)
 

@@ -1,0 +1,42 @@
+start_plan:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: yarbie
+    plan:
+      example: Weekly full
+      selector:
+        text:
+    plan_id:
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+
+set_lights:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: yarbie
+    brightness: &level
+      selector:
+        number:
+          min: 0
+          max: 255
+    led_head: *level
+    led_left_w: *level
+    led_right_w: *level
+    body_left_r: *level
+    body_right_r: *level
+    tail_left_r: *level
+    tail_right_r: *level
+
+get_map:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: yarbie

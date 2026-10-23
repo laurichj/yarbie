@@ -1,0 +1,343 @@
+{
+  "config": {
+    "flow_title": "Yarbo {serial}",
+    "step": {
+      "user": {
+        "title": "Add a Yarbo",
+        "description": "Enter the robot's address, or leave it empty to scan the network for it.",
+        "data": {
+          "host": "Address",
+          "scan": "Network to scan"
+        },
+        "data_description": {
+          "host": "IP address or name of the robot (or its base station). Empty: scan.",
+          "scan": "Optional, e.g. 192.168.1.0/24. Default: the networks Home Assistant is on."
+        }
+      },
+      "pick": {
+        "title": "Choose a robot",
+        "description": "More than one Yarbo answered.",
+        "data": {
+          "serial": "Robot"
+        }
+      },
+      "confirm": {
+        "title": "Add Yarbo {serial}?",
+        "description": "Found at {host}."
+      }
+    },
+    "error": {
+      "cannot_connect": "No Yarbo answered at that address on port 1883.",
+      "no_network": "Home Assistant is on no private network to scan. Enter the robot's address or a network.",
+      "not_found": "No Yarbo was found. Check it is awake and on the same network, or enter its address."
+    },
+    "abort": {
+      "already_configured": "This robot is already set up.",
+      "not_a_robot": "That device is not a Yarbo."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "yarbie options",
+        "data": {
+          "allow_writes": "Allow map, plan and settings writes",
+          "observe_only": "Observe only (send the robot nothing)",
+          "keep_awake": "Keep the robot awake",
+          "scan": "Network to scan if the robot moves",
+          "google_maps_key": "Google Maps key (satellite imagery in the Yard editor)",
+          "run_retention_days": "Keep run records for (days)"
+        },
+        "data_description": {
+          "observe_only": "For running beside another integration: reads only, never takes the robot's controller.",
+          "keep_awake": "Sends the wake command every minute. It takes the controller."
+        }
+      }
+    }
+  },
+  "issues": {
+    "untested_firmware": {
+      "title": "Yarbo firmware {firmware} not yet tested with yarbie",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Turn writes on for firmware {firmware}?",
+            "description": "yarbie's command list was verified on firmware {tested}; the robot now reports {firmware}. Map, plan and settings writes are off until you confirm; controls still work.\n\nAfter confirming, check it once: draw a small no-go zone in the Yard editor, send it, and check the Yarbo app shows it and can edit and delete it. Then delete it from the editor. If anything looks wrong, turn \"Allow map writes\" off in the yarbie options and report the firmware."
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "charging": {
+        "name": "Charging"
+      },
+      "problem": {
+        "name": "Problem"
+      },
+      "rain": {
+        "name": "Rain"
+      },
+      "emergency_stop": {
+        "name": "Emergency stop"
+      },
+      "rtk_fix": {
+        "name": "RTK fix"
+      },
+      "planning": {
+        "name": "Plan running"
+      },
+      "awake": {
+        "name": "Awake"
+      },
+      "power_fault": {
+        "name": "Power fault"
+      },
+      "push_pod_fault": {
+        "name": "Push pod fault"
+      },
+      "left_wheel_fault": {
+        "name": "Left wheel fault"
+      },
+      "right_wheel_fault": {
+        "name": "Right wheel fault"
+      }
+    },
+    "button": {
+      "beep": {
+        "name": "Beep"
+      },
+      "return_to_dock": {
+        "name": "Return to dock"
+      },
+      "pause": {
+        "name": "Pause"
+      },
+      "resume": {
+        "name": "Resume"
+      },
+      "stop": {
+        "name": "Stop"
+      },
+      "wake": {
+        "name": "Wake"
+      },
+      "refresh_map": {
+        "name": "Refresh map"
+      }
+    },
+    "device_tracker": {
+      "position": {
+        "name": "Position"
+      }
+    },
+    "event": {
+      "plan_event": {
+        "name": "Plan",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "plan_started": "Started",
+              "plan_paused": "Paused",
+              "plan_resumed": "Resumed",
+              "plan_finished": "Finished"
+            }
+          }
+        }
+      }
+    },
+    "image": {
+      "map": {
+        "name": "Map"
+      }
+    },
+    "light": {
+      "lights": {
+        "name": "Lights"
+      }
+    },
+    "select": {
+      "plan_select": {
+        "name": "Plan"
+      }
+    },
+    "sensor": {
+      "activity": {
+        "name": "Activity",
+        "state": {
+          "sleeping": "Sleeping",
+          "idle": "Idle",
+          "calculating_route": "Calculating route",
+          "heading_to_area": "Heading to area",
+          "working": "Working",
+          "waiting": "Waiting",
+          "waypoint": "Going to a waypoint",
+          "completed": "Completed",
+          "paused": "Paused",
+          "returning": "Returning",
+          "charging": "Charging",
+          "error": "Error"
+        }
+      },
+      "battery": {
+        "name": "Battery"
+      },
+      "error": {
+        "name": "Error"
+      },
+      "plan": {
+        "name": "Running plan"
+      },
+      "plan_progress": {
+        "name": "Plan progress"
+      },
+      "time_remaining": {
+        "name": "Time remaining"
+      },
+      "head": {
+        "name": "Head",
+        "state": {
+          "none": "None",
+          "snow_blower": "Snow blower",
+          "leaf_blower": "Leaf blower",
+          "mower": "Lawn mower",
+          "smart_cover": "Smart cover",
+          "mower_pro": "Lawn mower pro",
+          "trimmer": "Trimmer",
+          "unknown": "Unknown"
+        }
+      },
+      "rtk_status": {
+        "name": "RTK status"
+      },
+      "satellites": {
+        "name": "Satellites"
+      },
+      "heading": {
+        "name": "Heading"
+      },
+      "battery_voltage": {
+        "name": "Battery voltage"
+      },
+      "battery_current": {
+        "name": "Battery current"
+      },
+      "left_blade_rpm": {
+        "name": "Left blade speed"
+      },
+      "right_blade_rpm": {
+        "name": "Right blade speed"
+      },
+      "left_wheel_speed": {
+        "name": "Left wheel speed"
+      },
+      "right_wheel_speed": {
+        "name": "Right wheel speed"
+      },
+      "last_run": {
+        "name": "Last run",
+        "state": {
+          "completed": "Completed",
+          "partial": "Ended early",
+          "returned_to_dock": "Sent home",
+          "stopped": "Stopped",
+          "superseded": "Replaced by another run",
+          "unknown": "Unknown"
+        }
+      },
+      "last_run_ended": {
+        "name": "Last run ended"
+      },
+      "last_run_duration": {
+        "name": "Last run work time"
+      },
+      "last_run_progress": {
+        "name": "Last run progress"
+      }
+    },
+    "switch": {
+      "sound": {
+        "name": "Voice prompts"
+      },
+      "person_detection": {
+        "name": "Person detection"
+      },
+      "child_lock": {
+        "name": "Child lock"
+      }
+    }
+  },
+  "services": {
+    "start_plan": {
+      "name": "Start plan",
+      "description": "Starts one of the robot's plans, the way the Yarbo app does.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Only needed with more than one robot."
+        },
+        "plan": {
+          "name": "Plan name",
+          "description": "The plan's name as the robot has it."
+        },
+        "plan_id": {
+          "name": "Plan id",
+          "description": "Instead of the name."
+        }
+      }
+    },
+    "set_lights": {
+      "name": "Set lights",
+      "description": "Sets all seven light channels at once (0 to 255). Takes the robot's controller, so it is refused during a plan.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Only needed with more than one robot."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "For every channel not given below."
+        },
+        "led_head": {
+          "name": "Head",
+          "description": "Head light."
+        },
+        "led_left_w": {
+          "name": "Left white",
+          "description": "Left white light."
+        },
+        "led_right_w": {
+          "name": "Right white",
+          "description": "Right white light."
+        },
+        "body_left_r": {
+          "name": "Body left",
+          "description": "Body light, left."
+        },
+        "body_right_r": {
+          "name": "Body right",
+          "description": "Body light, right."
+        },
+        "tail_left_r": {
+          "name": "Tail left",
+          "description": "Tail light, left."
+        },
+        "tail_right_r": {
+          "name": "Tail right",
+          "description": "Tail light, right."
+        }
+      }
+    },
+    "get_map": {
+      "name": "Get map",
+      "description": "Returns the robot's map as GeoJSON (WGS84) with its revision.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Only needed with more than one robot."
+        }
+      }
+    }
+  }
+}

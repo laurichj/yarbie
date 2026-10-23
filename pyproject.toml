@@ -2,33 +2,35 @@
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
+# Development only: the integration is custom_components/yarbie, which Home Assistant
+# loads directly (HACS installs it from this repository). Nothing here is packaged.
 [project]
 name = "yarbie"
-version = "0.1.0"
-description = "Satellite-imagery map editor for Yarbo robots"
-requires-python = ">=3.11"
+version = "0.2.0"
+description = "Home Assistant integration for Yarbo robots, with a map editor panel"
+requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
-    "pydantic>=2.7",
-    "python-dotenv>=1.0",
-    "httpx>=0.27",
-    "yarbo-data-sdk==0.3.0",
-    # Pinned: the robot protocol changes with firmware; re-test before bumping.
-    "yarbo-local @ git+https://github.com/yarbo-local/yarbo-local@395bdb58e34ab36e679123f7860aa86e9c4dc04a",
+    # The integration's manifest requirement (yarbo-local itself is vendored).
+    "aiomqtt==2.5.1",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "httpx>=0.27", "ty"]
+dev = ["pytest>=8", "ty", "pytest-homeassistant-custom-component"]
 
-[project.scripts]
-yarbie = "yarbie.main:run"
-
-[tool.setuptools.packages.find]
-where = ["backend"]
+[tool.setuptools]
+packages = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ty.environment]
 python = ".venv"
+
+[tool.ty.rules]
+# Home Assistant entities override cached attributes with properties by design
+# (its CachedProperties metaclass); ty reads that as an invalid override.
+invalid-property-type-override = "ignore"
+invalid-mutable-override = "ignore"

@@ -1,0 +1,62 @@
+blueprint:
+  name: Yarbo - stop mowing when it rains
+  description: >
+    When the rain sensor turns wet during a plan, pause the robot or send it home.
+  domain: automation
+  input:
+    rain:
+      name: Rain sensor
+      description: The robot's own (Yarbo Rain) or any moisture sensor.
+      selector:
+        entity:
+          domain: binary_sensor
+    mower:
+      name: Robot
+      selector:
+        entity:
+          domain: lawn_mower
+          integration: yarbie
+    then:
+      name: Then
+      default: dock
+      selector:
+        select:
+          options:
+            - label: Return to the dock
+              value: dock
+            - label: Pause where it is
+              value: pause
+    wet_for:
+      name: Wet for at least
+      default:
+        minutes: 2
+      selector:
+        duration:
+
+triggers:
+  - trigger: state
+    entity_id: !input rain
+    to: "on"
+    for: !input wet_for
+
+conditions:
+  - condition: state
+    entity_id: !input mower
+    state: mowing
+
+actions:
+  - variables:
+      then: !input then
+  - if:
+      - condition: template
+        value_template: "{{ then == 'pause' }}"
+    then:
+      - action: lawn_mower.pause
+        target:
+          entity_id: !input mower
+    else:
+      - action: lawn_mower.dock
+        target:
+          entity_id: !input mower
+
+mode: single
