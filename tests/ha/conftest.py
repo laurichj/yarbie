@@ -65,6 +65,15 @@ async def ws(hass: HomeAssistant, hass_ws_client: Any, entry: MockConfigEntry) -
     return WS(await hass_ws_client(hass))
 
 
+async def busy(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """Put the simulated robot in a plan (paused, as a pause code alone is enough)."""
+    sim = entry.runtime_data.robot.simulator
+    sim.cmd_set_working_state({"state": 1})  # awake, so it pushes its state
+    sim._set_state(planning_paused=1)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.robot.busy
+
+
 def state(hass: HomeAssistant, entity_id: str) -> State:
     got = hass.states.get(entity_id)
     assert got is not None, f"{entity_id} does not exist"

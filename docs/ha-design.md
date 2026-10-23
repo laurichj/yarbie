@@ -20,6 +20,14 @@ simulator):
   - last-run sensors
   - a retention option
 
+Done on branch `feature/plans-schedules-areas` (checked with the simulator):
+
+- Plan editing moved to the dashboard (TODO 3): `custom:yarbie-plans-card`.
+- The schedule editor, built (TODO 4): websocket commands, a switch per schedule, a
+  Schedules calendar and `custom:yarbie-schedules-card`. What the robot's schedule
+  numbers mean is still unconfirmed; step 1 of TODO 4 (captures from the app) is open.
+- The Area settings view (TODO 5): a table of every area's settings, set in bulk.
+
 Where the build differs from the plan below:
 
 - **Vendoring layout.** The subtree holds the whole upstream repo at
@@ -43,6 +51,15 @@ Where the build differs from the plan below:
   robot is never asked. It does not read `hass.states`.
 - **No wireless charger output sensors yet.** The scale of those fields is unresolved in
   the field map.
+- **Plans are edited on the dashboard**, not in the panel's Plans tab (TODO 3). The
+  panel keeps the route preview.
+- **Plan writes check the busy state too.** Before, only map and settings writes did,
+  although the README said all three.
+- **The cards load like the strategy:** `www/yarbie-cards.js`, added with
+  `frontend.add_extra_js_url` in `panel.py` and defined again until it survives HA
+  swapping in its polyfilled element registry. They call the admin-only websocket
+  commands, so for other users they say only administrators can manage plans. Start
+  goes through the `yarbie.start_plan` action, open to every user.
 
 Not done yet:
 
@@ -187,6 +204,8 @@ Mockups: `mockups/01-dashboard.png`, `mockups/02-device.png`.
 | `light` | All lights (`light_ctrl`) | on |
 | `light` | 7 individual channels | off |
 | `switch` | Sound (`set_sound_param`), person detection, child lock | on |
+| `switch` | One per schedule: on or off (TODO 4) | on |
+| `calendar` | Schedules: the enabled schedules' upcoming runs, under an unconfirmed reading (TODO 4) | on |
 | `device_tracker` | Position, from `CombinedOdom` plus the GPS reference | on |
 | `event` | Plan lifecycle | on |
 | `image` | Map render (areas, no-go zones, pathways, dock, robot, this run's progress) | on |
@@ -248,9 +267,12 @@ Mockups: `mockups/03-editor-changes.png`, `mockups/04-plans-route-preview.png`,
   - The dock-link (WP005) warning.
   - Discard, and the two-click "Confirm: send N changes".
 - **Selected**: name, on/off state and geometry details for the selected feature.
-- **Plans**: list, create, edit and delete plans, start a plan, and route preview.
+- **Plans**: the plans with **Route** (the route preview, with the plan's areas outlined)
+  and a link to the Yarbo dashboard, where plans are edited (TODO 3).
 - **Areas**: name, mowing pattern, cutting height, edge passes and speed (the verified
-  mower area params), plus the wear summary.
+  mower area params), plus the wear summary, and a link to the Area settings view.
+- **Area settings** (a view of its own, from the header): every area's settings in one
+  table (TODO 5).
 - **Runs**: see TODO 1.
 
 ### Websocket API
@@ -267,6 +289,9 @@ actor.
 | `yarbie/imagery` | `/api/imagery` |
 | `yarbie/plans/list|save|delete` | `/api/plans*` |
 | `yarbie/area_params/get|save` | `/api/areas/{id}/mower-params` |
+| `yarbie/areas/list` | (new) area ids and names, for the cards |
+| `yarbie/schedules/list|save|delete` | (new, TODO 4) |
+| `yarbie/area_settings/get|apply` | (new, TODO 5) every area's settings; a bulk change |
 | `yarbie/progress/subscribe` | `/api/progress` (it is pushed now) |
 | `yarbie/route/start`, `yarbie/job/subscribe` | `/api/plans/{id}/route` |
 | `yarbie/heatmap/start` | `/api/heatmap` |
@@ -297,9 +322,11 @@ How the job version works:
 
 - A backup of the full robot map is written before every apply, to
   `/config/yarbie/backups/<stamp>-<actor>-before-apply.json`.
+- A backup of every affected area's record and mowing settings is written before a bulk
+  settings change, beside them as `<stamp>-before-area-settings-<actor>.json`.
 - **Revision check:** an apply is refused if the map changed since the panel loaded it.
 - **Busy check:** writes are refused while a plan is running or paused.
-- One write at a time (a lock around apply, plan and settings writes).
+- One write at a time (a lock around apply, plan, schedule and settings writes).
 - Two-click confirm in the panel.
 - Dock-link (WP005) warning in the change list.
 - Only commands verified in yarbo-local's registry. There is no raw command path.
@@ -309,7 +336,7 @@ How the job version works:
 
 | What | Where |
 |---|---|
-| Map backups | `/config/yarbie/backups/` (included in HA backups) |
+| Map and area settings backups | `/config/yarbie/backups/` (included in HA backups) |
 | Run log (TODO 1) | `/config/yarbie/runs/` |
 | Robot address, Google tile session, imagery offset | HA `Store` (`.storage/yarbie.*`) |
 | Settings | Config entry and its options |
@@ -443,7 +470,23 @@ a Pro.
   once-per-run sensors per area ("Back lawn load vs median") for automations such as
   mowing an area early.
 
-### 3. Move plan editing out of the map editor
+### 3. Move plan editing out of the map editor (done)
+
+Built as planned, on `feature/plans-schedules-areas`:
+- `custom:yarbie-plans-card` (`frontend/src/plansCard.ts`): the plans with their areas,
+  New, Edit (name, areas as a checklist, then their order), Delete with a two-click
+  confirm, and Start. The strategy places it under the plan select and passes the
+  robot's config entry, so two robots each get their own.
+- The card reads area names from a new `yarbie/areas/list` rather than the whole map.
+- The Yard editor's Plans section is the list with **Route**, which also outlines the
+  plan's areas, and a link to the dashboard it finds by its strategy.
+- Area order: the robot is sent the areas in the chosen order, but like the app yarbie
+  sends `enable_self_order` on, so the robot may choose its own; the card says so.
+- Not built: the optional "Pick on the map". The device page's "Manage plans" link
+  cannot be added from an integration either (HA has no hook for it), so the plan select
+  stays the device page's part.
+
+The plan as written:
 
 Plans are a robot setting, not map geometry: which areas, in what order. Today they are
 edited in the Yard editor's Plans section. Move editing to where the robot's other
@@ -468,7 +511,31 @@ areas by clicking them).
 - **Optional:** with the editor open, clicking areas on the map adds them to the plan
   being edited, which the card would offer as "Pick on the map".
 
-### 4. Schedule editor
+### 4. Schedule editor (built; step 1 still open)
+
+**Status.** The "then build" part is done on `feature/plans-schedules-areas`, tested
+against the simulator only. **Step 1 is not done: captures from the Yarbo app are still
+needed**, so nothing below claims what the numbers mean.
+- `yarbie/schedules/list|save|delete` under the write rails (lock, busy, kill switch,
+  untested firmware).
+- A switch per schedule, created and removed as schedules come and go. Turning one off
+  sends the robot's own record back with only `enable` changed.
+- The **Schedules calendar**. Dates need some reading of the numbers, so it uses one,
+  stated on every event as unconfirmed (`schedules.READING`): `week_day` as a bitmask
+  with Monday as 1, times as HA's local time, an end before the start as the next day.
+  The app's one enabled capture (start 17:09, end 16:10 with the capture at 16:10 UTC)
+  hints the times may be converted, so expect this to change.
+- `custom:yarbie-schedules-card` beside the plan card. It shows and sends the robot's
+  numbers, labels `week_day`, `schedule_type` and `return_method` unconfirmed, and starts
+  new schedules with what the app sent (3, 1, 2). Its day boxes use the calendar's
+  reading of `week_day` and say so; the raw number can be typed instead.
+- Not built: "started by schedule" in the run history and the rain option. Both need
+  to know what a firing schedule does (step 1).
+
+When step 1 is done, change `schedules.READING`, `weekdays()` and `occurrences()` and the
+card's labels together.
+
+The plan as written:
 
 yarbo-local has verified `read_schedules`, `save_schedule` and `del_schedule`. But only a
 *disabled* schedule has ever been stored on a real robot. What `schedule_type`,
@@ -497,6 +564,48 @@ not known. The app sent 3, 1 and 2.
 - **Rain:** whether to skip a scheduled run when it is raining, as an option, which needs
   the rain-pause blueprint's logic at start time.
 
+### 5. Area settings: a bulk editor (done)
+
+Asked for: "something like a spreadsheet where I can set a subset of area configuration
+options to all or some areas at the same time in order to easily keep them in sync."
+
+Built on `feature/plans-schedules-areas` as the **Area settings** view of the Yard
+editor (`frontend/src/areaTable.ts`): a header button switches between the map and it,
+and an area's details in the map view link to it. It lives in the panel rather than a
+card because the panel is admin-only, like every settings write, and has the width a
+table of 30 columns needs.
+
+- **Rows** are the work areas; **columns** their mowing pattern (`algorithm_type`, an
+  area record field, written with `update_area`) and the mower area parameters
+  (`update_mower_area_params`, the keys of `APP_MOWER_AREA_KEYS` but `id` and
+  `mapping_module_type`; nested ones such as `first_clean_params.blade_height` are
+  columns of their own).
+- **Which columns.** The named ones share their labels and units with the single-area
+  form (`areaSettings.ts`): cutting height, row direction, speed, blade speed*, turn
+  type, passes*, the second pass, perimeter laps, edge first, around no-go zones, edge
+  bypass, edge direction*, avoidance level, no-go zone distance*, trimmer* (* = meaning
+  inferred from the name). Any other number or switch the robot sends is offered under
+  "Raw robot fields". `current_index`, `mower_target_height_count` and the like that the
+  robot keeps for itself are hidden. Eight columns show by default; the user's choice is
+  remembered, and "Show columns that differ" adds every column the areas disagree on.
+- **Editing.** Checkboxes and select all pick rows; a value in a column's header row is
+  set on the selected rows; single cells can be edited. Cells that differ from most
+  areas in their column are tinted, with a count in the heading; pending edits are
+  outlined and say what they were.
+- **Sending.** Review lists the changes per area (each can be dropped), then a two-click
+  confirm. `yarbie/area_settings/apply` checks every change before sending anything,
+  takes the write lock, refuses while a plan runs or is paused, obeys the kill switch and
+  the untested-firmware rail, and saves a backup of every affected area's record and
+  settings beside the map backups, named with who sent it. Group settings
+  (`first_clean_params`...) may only name keys the robot already holds. Each area is
+  reported as changed, unchanged (nothing to send) or refused; one failing does not stop
+  the rest. The areas sent to are then read again, one at a time (the session pairs
+  replies by command name), and the table re-reads everything each time it opens. If
+  that read-back fails, the reply still says what was sent. A notification and a
+  `yarbie_area_settings_changed` event say who changed what.
+- Not built: restoring from an area settings backup (the file holds what is needed; the
+  map History lists only map backups).
+  
 ### 6. Keep the Yard editor to editing the map
 
 Builds on #5 (plan and schedule cards, and TODO 5: the Area settings table), which

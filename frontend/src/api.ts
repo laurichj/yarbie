@@ -147,6 +147,30 @@ export interface Run {
   area_states?: Record<string, "done" | "edge" | "left">;
 }
 
+/** One work area in the Area settings table: its pattern and its mowing settings (null
+ * when the robot would not give them). */
+export interface AreaSettings {
+  id: number;
+  name: string;
+  algorithm_type: number | null;
+  params: Record<string, unknown> | null;
+}
+
+/** What to change on one area; ``params`` is a partial record, nested values merged. */
+export interface AreaChange {
+  area_id: number;
+  algorithm_type?: number;
+  params?: Record<string, unknown>;
+}
+
+export interface AreaSettingsResult {
+  // ok: something was sent; skipped: there was nothing to send; error: it was refused.
+  results: { area_id: number; name: string; ok: boolean; error: string | null; skipped: string | null }[];
+  backup: string;
+  areas: AreaSettings[] | null; // the areas sent to, read again; null if that read failed
+  read_error: string | null;
+}
+
 /** What the panel needs from the ``hass`` object Home Assistant hands it. */
 export interface Hass {
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
@@ -246,6 +270,21 @@ interface Info {
   position: Status["position"];
 }
 
+/** The Yarbo dashboard's path (the one built by the yarbie strategy), if one was added. */
+async function yarboDashboard(): Promise<string | null> {
+  if (!hass) return null;
+  const boards = await hass.callWS<{ url_path: string; mode: string }[]>({ type: "lovelace/dashboards/list" });
+  for (const board of boards.filter((b) => b.mode === "storage")) {
+    try {
+      const config = await hass.callWS<{ strategy?: { type?: string } }>({ type: "lovelace/config", url_path: board.url_path });
+      if (config.strategy?.type === "custom:yarbie") return `/${board.url_path}`;
+    } catch {
+      // an empty or broken dashboard: not ours
+    }
+  }
+  return null;
+}
+
 export const api = {
   status: async (): Promise<Status> => {
     const info = await call<Info>("info");
@@ -267,16 +306,12 @@ export const api = {
   apply: (features: MapCollection, revision: string) =>
     call<ApplyResult>("apply", { features, revision }),
   imagery: () => call<{ sources: Imagery[]; error?: string; hint?: string }>("imagery"),
-  backups: () => call<{ name: string; bytes: number }[]>("backups/list"),
+  backups: () => call<{ name: string; bytes: number; kind: "map" | "area_settings" }[]>("backups/list"),
   backup: (name: string) => call<{ features: MapCollection }>("backups/get", { name }),
   progress: () => call<Progress>("progress"),
   heatmap: (days: number, refresh: boolean) => call<Heatmap>("heatmap", { days, refresh }),
   plans: () => call<Plan[]>("plans/list"),
-  createPlan: (name: string, area_ids: number[]) =>
-    call<{ id: number }>("plans/save", { name, area_ids }),
-  updatePlan: (id: number, name: string, area_ids: number[]) =>
-    call<{ id: number }>("plans/save", { plan_id: id, name, area_ids }),
-  deletePlan: (id: number) => call<{ deleted: number }>("plans/delete", { plan_id: id }),
+  dashboard: yarboDashboard,
   route: (id: number) => job<RouteCollection>("route/start", { plan_id: id }),
   mowerParams: (areaId: number) =>
     call<{ params: Record<string, unknown>; editable: string[] }>("area_params/get", {
@@ -284,6 +319,8 @@ export const api = {
     }),
   updateMowerParams: (areaId: number, changes: Record<string, unknown>) =>
     call<{ sent: Record<string, unknown> }>("area_params/save", { area_id: areaId, changes }),
+  areaSettings: () => call<{ areas: AreaSettings[]; editable: string[] }>("area_settings/get"),
+  applyAreaSettings: (changes: AreaChange[]) => call<AreaSettingsResult>("area_settings/apply", { changes }),
   runs: (refresh: boolean, planId?: number) =>
     call<{ runs: Run[]; plans: { id: number; name: string }[]; count: number }>("runs/list", {
       refresh,

@@ -15,7 +15,15 @@ interface EntityEntry {
 
 interface Hass {
   entities: Record<string, EntityEntry>;
-  devices: Record<string, { name?: string | null; name_by_user?: string | null }>;
+  devices: Record<
+    string,
+    {
+      name?: string | null;
+      name_by_user?: string | null;
+      config_entries?: string[];
+      primary_config_entry?: string | null;
+    }
+  >;
   states: Record<string, unknown>;
 }
 
@@ -88,6 +96,16 @@ function view(hass: Hass, deviceId: string, robots: number): Card {
     });
   }
   controls.push(...tiles(hass, found, name, ["battery", "activity", "plan_progress", "time_remaining", "error", "rain"]));
+  // Plans are edited here, beside the plan select (cards.ts). The select's options change
+  // when the plans do, so the card watches it.
+  const entry = device?.primary_config_entry ?? device?.config_entries?.[0];
+  const robot = { ...(entry ? { entry_id: entry } : {}), ...(mower ? { mower } : {}) };
+  controls.push({
+    type: "custom:yarbie-plans-card",
+    ...robot,
+    ...(plan ? { entity: plan } : {}),
+    grid_options: { columns: 12 },
+  });
 
   const yard: Card[] = [{ type: "heading", heading: "Yard", heading_style: "title" }];
   if (map) {
@@ -113,6 +131,15 @@ function view(hass: Hass, deviceId: string, robots: number): Card {
     { type: "heading", heading: "Controls", heading_style: "subtitle" },
     ...tiles(hass, found, name, ["beep", "stop", "lights", "refresh_map"]),
   );
+  // Schedules beside the plans' column, which is long enough already. The calendar's next
+  // event changes when they do.
+  const calendar = found.get("schedules");
+  yard.push({
+    type: "custom:yarbie-schedules-card",
+    ...robot,
+    ...(calendar ? { entity: calendar } : {}),
+    grid_options: { columns: 12 },
+  });
 
   const watched = [mower, found.get("plan_event"), found.get("error"), found.get("charging")].filter(
     (e): e is string => Boolean(e),
