@@ -12,3 +12,4 @@ frontend/dist/
 .ha-dev/
 # Built by `npm run build` in frontend/; releases ship it in yarbie.zip.
 custom_components/yarbie/www/
+/yarbie.zip
