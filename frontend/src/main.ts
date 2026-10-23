@@ -766,7 +766,7 @@ function moveSelected(east: number, north: number) {
 async function linkDashboard() {
   try {
     const [path, info] = await Promise.all([api.dashboard(), api.info()]);
-    dashboard = { path, robots: info.robots ?? 1, device: info.device_id ?? null };
+    dashboard = { path, robots: api.robots(), device: info.device_id ?? null };
   } catch {
     // listing dashboards failed; say where to add one instead
   }

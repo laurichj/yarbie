@@ -1,6 +1,8 @@
 // Typed calls to the yarbie integration over Home Assistant's own websocket connection.
 // Geometry is GeoJSON in WGS84 throughout.
 
+import { yarbieDevices } from "./robots";
+
 export type Family =
   | "areas"
   | "nogozones"
@@ -199,6 +201,7 @@ export interface AreaSettingsResult {
 
 /** What the panel needs from the ``hass`` object Home Assistant hands it. */
 export interface Hass {
+  entities?: Record<string, { platform?: string; device_id?: string | null }>;
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
   callService(domain: string, service: string, data?: Record<string, unknown>): Promise<unknown>;
   connection: {
@@ -246,7 +249,6 @@ async function call<T>(type: string, data: Record<string, unknown> = {}): Promis
 
 interface Info {
   device_id: string | null;
-  robots: number;
   source: Status["source"];
   connected: boolean;
   writable: boolean;
@@ -304,6 +306,8 @@ export const api = {
   backups: () => call<{ name: string; bytes: number; kind: "map" | "area_settings" }[]>("backups/list"),
   backup: (name: string) => call<{ features: MapCollection }>("backups/get", { name }),
   dashboard: yarboDashboard,
+  /** How many robots the Yarbo dashboard has views for. */
+  robots: () => yarbieDevices(hass?.entities ?? {}).length,
   log: (kind: string, detail: unknown) =>
     hass?.callService("system_log", "write", {
       logger: "custom_components.yarbie.panel",

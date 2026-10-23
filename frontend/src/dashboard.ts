@@ -4,7 +4,10 @@
 // opens, so renamed entities and a second robot need no editing. Two views per robot:
 // three balanced columns (the mower and its controls, the yard map, recent runs), and a
 // full-width Area settings table. ?area=, ?run= and ?plan= in the address select an area
-// or run on their cards. Loaded on every page (HA's extra modules), so it imports nothing.
+// or run on their cards. Loaded on every page (HA's extra modules), so it imports only
+// the small rule it shares with the editor.
+
+import { yarbieDevices } from "./robots";
 
 interface EntityEntry {
   entity_id: string;
@@ -117,10 +120,12 @@ function views(hass: Hass, deviceId: string, robots: number): Card[] {
   // The yard map card, not the map image entity (that stays for other dashboards and
   // automations): it also shows the run, route previews, wear and past runs.
   const tracker = found.get("position");
+  const map = found.get("map");
   yard.push({
     type: "custom:yarbie-yard-card",
     ...robot,
     ...(tracker ? { tracker } : {}),
+    ...(map ? { map } : {}),
     grid_options: { columns: 12 },
   });
   yard.push({
@@ -203,13 +208,7 @@ function views(hass: Hass, deviceId: string, robots: number): Card[] {
 
 class YarbieDashboardStrategy extends HTMLElement {
   static async generate(_config: Card, hass: Hass): Promise<Card> {
-    const devices = [
-      ...new Set(
-        Object.values(hass.entities)
-          .filter((e) => e.platform === PLATFORM && e.device_id)
-          .map((e) => e.device_id as string),
-      ),
-    ];
+    const devices = yarbieDevices(hass.entities);
     if (!devices.length) {
       return {
         title: "Yarbo",
