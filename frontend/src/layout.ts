@@ -5,6 +5,7 @@ export const LAYOUT = `
       <aside id="panel">
         <header>
           <h1>Yard editor</h1>
+          <button id="open-area-settings" title="Every area's mowing settings side by side, to change several at once">Area settings</button>
           <span id="status" class="pill">connecting…</span>
         </header>
         <div id="demo-banner" class="banner" hidden>
@@ -110,5 +111,15 @@ export const LAYOUT = `
         <footer id="message" role="status"></footer>
       </aside>
       <div id="map"></div>
+    </div>
+    <div id="area-view" hidden>
+      <header>
+        <button id="area-back">← Map</button>
+        <h1>Area settings</h1>
+        <span class="hint">Every work area's mowing settings. Select areas, set a value on all of them, review, then send.</span>
+      </header>
+      <p id="area-rails" class="banner" hidden></p>
+      <div id="area-body"></div>
+      <footer id="area-message" role="status"></footer>
     </div>
 `;

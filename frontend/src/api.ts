@@ -147,6 +147,28 @@ export interface Run {
   area_states?: Record<string, "done" | "edge" | "left">;
 }
 
+/** One work area in the Area settings table: its pattern and its mowing settings (null
+ * when the robot would not give them). */
+export interface AreaSettings {
+  id: number;
+  name: string;
+  algorithm_type: number | null;
+  params: Record<string, unknown> | null;
+}
+
+/** What to change on one area; ``params`` is a partial record, nested values merged. */
+export interface AreaChange {
+  area_id: number;
+  algorithm_type?: number;
+  params?: Record<string, unknown>;
+}
+
+export interface AreaSettingsResult {
+  results: { area_id: number; name: string; ok: boolean; error: string | null }[];
+  backup: string;
+  areas: AreaSettings[];
+}
+
 /** What the panel needs from the ``hass`` object Home Assistant hands it. */
 export interface Hass {
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
@@ -282,7 +304,7 @@ export const api = {
   apply: (features: MapCollection, revision: string) =>
     call<ApplyResult>("apply", { features, revision }),
   imagery: () => call<{ sources: Imagery[]; error?: string; hint?: string }>("imagery"),
-  backups: () => call<{ name: string; bytes: number }[]>("backups/list"),
+  backups: () => call<{ name: string; bytes: number; kind: "map" | "area_settings" }[]>("backups/list"),
   backup: (name: string) => call<{ features: MapCollection }>("backups/get", { name }),
   progress: () => call<Progress>("progress"),
   heatmap: (days: number, refresh: boolean) => call<Heatmap>("heatmap", { days, refresh }),
@@ -295,6 +317,8 @@ export const api = {
     }),
   updateMowerParams: (areaId: number, changes: Record<string, unknown>) =>
     call<{ sent: Record<string, unknown> }>("area_params/save", { area_id: areaId, changes }),
+  areaSettings: () => call<{ areas: AreaSettings[]; editable: string[] }>("area_settings/get"),
+  applyAreaSettings: (changes: AreaChange[]) => call<AreaSettingsResult>("area_settings/apply", { changes }),
   runs: (refresh: boolean, planId?: number) =>
     call<{ runs: Run[]; plans: { id: number; name: string }[]; count: number }>("runs/list", {
       refresh,

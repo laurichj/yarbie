@@ -102,6 +102,8 @@ var s = {
 		area_id: e,
 		changes: t
 	}),
+	areaSettings: () => i("area_settings/get"),
+	applyAreaSettings: (e) => i("area_settings/apply", { changes: e }),
 	runs: (e, t) => i("runs/list", {
 		refresh: e,
 		...t === void 0 ? {} : { plan_id: t }

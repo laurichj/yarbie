@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .._vendor.yarbo_local.payloads import APP_MOWER_AREA_KEYS
 from . import diff, heatmap, mapdoc
 from .backups import BackupStore
 
@@ -36,6 +37,10 @@ class MapView:
             "reference": list(ref) if ref else None,
             "features": mapdoc.to_feature_collection(self.raw, self.reference),
         }
+
+
+# The mowing settings the app sends that are the area's own (the rest the robot keeps).
+AREA_SETTING_KEYS = frozenset(APP_MOWER_AREA_KEYS) - {"id", "mapping_module_type"}
 
 
 class MapService:
@@ -190,3 +195,73 @@ class MapService:
         async with self.lock:
             self._check_idle()
             return await self.robot.update_mower_area_params(area_id, changes)
+
+    # -- many areas' settings at once (the Area settings view)
+
+    async def area_settings(self) -> list[dict[str, Any]]:
+        """Every work area with its pattern and mowing settings, read from the robot."""
+        view = await self.load()
+        out = []
+        for area in view.raw.get("areas") or []:
+            area_id = area.get("id")
+            if not isinstance(area_id, int):
+                continue
+            params = await self.robot.mower_area_params(area_id)
+            out.append(
+                {
+                    "id": area_id,
+                    "name": area.get("name") or "",
+                    "algorithm_type": area.get("algorithm_type"),
+                    "params": params,
+                }
+            )
+        return out
+
+    async def apply_area_settings(
+        self, changes: list[dict[str, Any]], actor: str | None
+    ) -> dict[str, Any]:
+        """Send each area its changes, after backing up every affected area as it was.
+
+        Each change is ``{"area_id", "algorithm_type"?, "params"?}``; ``params`` is a
+        partial mowing record, nested values merged into the stored ones. Every change is
+        checked before anything is sent. One area failing does not stop the others.
+        """
+        self._check_writes()
+        for change in changes:
+            unknown = sorted(set(change.get("params") or {}) - AREA_SETTING_KEYS)
+            if unknown:
+                raise ValueError(f"not an area setting the app sends: {', '.join(unknown)}")
+        async with self.lock:
+            self._check_idle()
+            view = await self.load()
+            areas = {a.get("id"): a for a in view.raw.get("areas") or []}
+            missing = sorted(c["area_id"] for c in changes if c["area_id"] not in areas)
+            if missing:
+                raise ValueError(f"the robot has no area {', '.join(map(str, missing))}")
+            before = [
+                {"area": areas[c["area_id"]], "params": await self.robot.mower_area_params(c["area_id"])}
+                for c in changes
+            ]
+            backup = await asyncio.to_thread(self.backups.save_area_settings, before, actor)
+            results: list[dict[str, Any]] = []
+            for change in changes:
+                area_id = change["area_id"]
+                result: dict[str, Any] = {
+                    "area_id": area_id, "name": areas[area_id].get("name") or "", "ok": False, "error": None,
+                }
+                results.append(result)
+                if self.robot.busy:  # started from the app meanwhile: send nothing more
+                    result["error"] = "not sent: the robot started a plan"
+                    continue
+                try:
+                    pattern = change.get("algorithm_type")
+                    if pattern is not None and pattern != areas[area_id].get("algorithm_type"):
+                        await self.robot.update_area(area_id, name=None, outline=None, algorithm_type=pattern)
+                    if change.get("params"):
+                        await self.robot.update_mower_area_params(area_id, change["params"])
+                except Exception as err:  # report it with this area, and go on to the next
+                    result["error"] = str(err) or type(err).__name__
+                    continue
+                result["ok"] = True
+            await self.load()
+            return {"results": results, "backup": backup.name}

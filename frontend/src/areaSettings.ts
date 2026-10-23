@@ -2,9 +2,9 @@
 // names the robot itself uses in its run history (perimeter_mowing_laps, mowing_heights,
 // route_angles, ...) are taken as confirmed, the rest are inferred and marked with *.
 
-type Kind = "number" | "bool";
+export type Kind = "number" | "bool";
 
-interface Field {
+export interface Field {
   path: string; // key, or "group.key" for first/second pass settings
   label: string;
   kind: Kind;
@@ -15,7 +15,7 @@ interface Field {
   inferred?: boolean;
 }
 
-const GROUPS: { title: string; fields: Field[]; when?: (p: Params) => boolean }[] = [
+export const GROUPS: { title: string; fields: Field[]; when?: (p: Params) => boolean }[] = [
   {
     title: "Mowing",
     fields: [
@@ -56,15 +56,23 @@ const GROUPS: { title: string; fields: Field[]; when?: (p: Params) => boolean }[
   },
 ];
 
-// Values the robot keeps for itself or that only make sense to its firmware.
-const HIDDEN = new Set(["id", "mapping_module_type", "current_index", "mower_target_height_count"]);
+// The area's mowing pattern (algorithm_type, verified on the robot: 2, 3 and 5 plan what
+// 0 does). An area record field, sent with save_clean_area, not a mowing setting.
+export const PATTERNS: [number, string][] = [
+  [0, "Rows"],
+  [4, "Rows, fewer turns"],
+  [1, "Spiral (contour)"],
+];
 
-type Params = Record<string, unknown>;
+// Values the robot keeps for itself or that only make sense to its firmware.
+export const HIDDEN = new Set(["id", "mapping_module_type", "current_index", "mower_target_height_count"]);
+
+export type Params = Record<string, unknown>;
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-function read(params: Params, path: string): unknown {
+export function read(params: Params, path: string): unknown {
   const [key, sub] = path.split(".");
   const value = params[key];
   return sub ? (value as Params | undefined)?.[sub] : value;

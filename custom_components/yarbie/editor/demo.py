@@ -144,6 +144,53 @@ def schedules() -> list[dict[str, Any]]:
     ]
 
 
+def mower_area_params(area_id: int) -> dict[str, Any]:
+    """An area's mowing record with all the keys a real one has (``read_mower_area_params``
+    on 3.14.11). The back lawn is cut higher and without the trimmer, so the areas differ."""
+    back = area_id == 2
+    return {
+        "auto_step_angle": 10,
+        "avoidance_level": 1,
+        "buffer_dis": 0.0,
+        "clean_times": 1,
+        "clean_times_dis": 0.0001,
+        "contract_dis": 0.0,
+        "current_blade_height": 0,
+        "current_index": 0,
+        "double_clean_params": {
+            "blade_height": 0, "blade_speed": 80, "land_push_pod_place": 50, "plan_speed": 0.5,
+            "route_angle": 90, "route_dis": 0.0, "turn_type": 1,
+        },
+        "edge_area_first": True,
+        "edge_bypass_sw": True,
+        "edge_circles": 2,
+        "edge_direction_mode": 0,
+        "en_trimmer": not back,
+        "enable_clean_times_dis": False,
+        "enable_explore": False,
+        "first_clean_params": {
+            "blade_height": 64 if back else 50, "blade_speed": 80, "land_push_pod_place": 30,
+            "plan_speed": 0.5, "route_angle": 10, "route_dis": 0.0, "turn_type": 1,
+        },
+        "gap": 0.5,
+        "id": area_id,
+        "m1pro_sensor_switch": 87,
+        "move2area_max_offset": 2.0,
+        "move2area_offset_count": {},
+        "move2area_offset_enable": True,
+        "move2area_step_offset": 0.1,
+        "mower_ngz_edge_sw": False,
+        "mower_target_height_count": 5,
+        "ngz_expand_dis": 0.3,
+        "parallel_angle_max": 90,
+        "parallel_angle_min": -90,
+        "parallel_offset_mode": 2,
+        "route_order": 1,
+        "sensor_switch": 8,
+        "side_enable": True,
+    }
+
+
 def snapshot() -> dict[str, Any]:
     """Just enough of ``get_device_msg`` for the session and the status bar."""
     return {

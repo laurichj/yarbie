@@ -16,7 +16,6 @@ from ._vendor.yarbo_local import FakeTransport, Simulator, YarboRobot
 from ._vendor.yarbo_local.exceptions import CommandError
 from ._vendor.yarbo_local.feedback import PlanFeedback
 from ._vendor.yarbo_local.models import PlanSummary, RobotState, Schedule
-from ._vendor.yarbo_local.simulator import MOWER_AREA_PARAMS_DEFAULT
 from .editor import demo
 
 Point = tuple[float, float, float]
@@ -120,7 +119,7 @@ class Robot:
         # Keep new ids clear of the demo's own (the real robot counts on from its last).
         sim.next_object_id = 100
         for area in demo.site_map()["areas"]:
-            sim.mower_area_params[area["id"]] = {**MOWER_AREA_PARAMS_DEFAULT, "id": area["id"]}
+            sim.mower_area_params[area["id"]] = demo.mower_area_params(area["id"])
         transport = FakeTransport()
         sim.attach(transport)
         robot = cls(YarboRobot(transport, serial=demo.SERIAL), "sim")

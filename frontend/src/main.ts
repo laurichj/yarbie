@@ -6,7 +6,8 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { api, ApiError, type Family, type Heatmap, type Imagery, type Progress, type MapFeature, type MapResponse, type Op, type Plan, type Run, type Status } from "./api";
 import { COLORS, Editor, EDITABLE, type Tool } from "./editor";
 import { debugLog, installDebug } from "./debug";
-import { settingsForm, trackChanges } from "./areaSettings";
+import { PATTERNS, settingsForm, trackChanges } from "./areaSettings";
+import { openAreaSettings, wireAreaView } from "./areaTable";
 import { bounds, circle, circleFit, metresToOffset, shiftGeometry, type Offset } from "./geo";
 
 
@@ -45,11 +46,6 @@ const BEST_FIRST = ["google", "snoco-2024", "esri", "esri-clarity"];
 let imageryChosen = loadImagery();
 let imagery = imageryChosen ?? "esri";
 const STATIC_FAMILIES: Family[] = ["novisionzones", "elec_fence", "deadends", "dock"];
-const PATTERNS: [number, string][] = [
-  [0, "Rows"],
-  [4, "Rows, fewer turns"],
-  [1, "Spiral (contour)"],
-];
 const NUDGE_M = 0.25;
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -782,7 +778,8 @@ function offerUndoApply(backup: string) {
 async function refreshHistory() {
   let backups: { name: string }[];
   try {
-    backups = await api.backups();
+    // Backups of area settings are kept beside the map's, but are not maps to revert to.
+    backups = (await api.backups()).filter((b) => b.kind === "map");
   } catch {
     return;
   }
@@ -876,7 +873,7 @@ function renderSelection() {
         : ""
     }
     <div class="row"><button id="sel-delete" class="danger">Delete</button></div>
-    ${p.family === "areas" && !isNew ? `<div id="params"><p class="hint">Loading mowing settings…</p></div>` : ""}
+    ${p.family === "areas" && !isNew ? `<p class="hint"><a href="#" id="compare-areas">Compare with the other areas</a> (Area settings)</p><div id="params"><p class="hint">Loading mowing settings…</p></div>` : ""}
   `;
   const id = feature.id;
   ($("sel-name") as HTMLInputElement).addEventListener("change", (e) =>
@@ -921,7 +918,26 @@ function renderSelection() {
     selectedId = null;
     renderSelection();
   });
+  $("compare-areas")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    void showAreaSettings(p.id ?? undefined);
+  });
   if (p.family === "areas" && p.id !== null) void renderParams(p.id);
+}
+
+// -- the Area settings view (areaTable.ts)
+
+async function showAreaSettings(focusArea?: number) {
+  await openAreaSettings((changed) => {
+    // A pattern sent from there changes the map: read it again unless edits are pending.
+    if (!changed) return;
+    if (ops.length) {
+      say("Area settings were changed on the robot. Reload the map before applying your map edits.", "error");
+    } else {
+      void reload(false);
+    }
+    if (selectedId) renderSelection();
+  }, focusArea);
 }
 
 // -- moving a no-go zone by steps, like the imagery alignment
@@ -1402,6 +1418,8 @@ function wireControls() {
     await refreshPlans();
   });
   $("fit").addEventListener("click", fitToMap);
+  $("open-area-settings").addEventListener("click", () => void showAreaSettings());
+  wireAreaView();
   $("apply").addEventListener("click", apply);
   $("export").addEventListener("click", exportGeoJSON);
   $("import").addEventListener("change", importGeoJSON);

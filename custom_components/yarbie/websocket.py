@@ -22,7 +22,7 @@ from ._vendor.yarbo_local.payloads import APP_MOWER_AREA_KEYS
 from .const import DOMAIN, OPT_GOOGLE_MAPS_KEY
 from .coordinator import YarbieCoordinator
 from .editor import mapdoc, routes, runs
-from .editor.service import ConflictError, ReadOnlyError
+from .editor.service import AREA_SETTING_KEYS, ConflictError, ReadOnlyError
 from .imagery import GoogleImagery
 from .jobs import Job
 
@@ -384,6 +384,56 @@ async def ws_area_params_save(hass: HomeAssistant, connection: websocket_api.Act
     connection.send_result(msg["id"], {"sent": sent})
 
 
+@_command({probatio.Required("type"): "yarbie/area_settings/get"})
+async def ws_area_settings(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Every area's pattern and mowing settings, for the Area settings table."""
+    c = _coordinator(hass, msg)
+    areas = await c.service.area_settings()
+    c.map_stale = False
+    connection.send_result(msg["id"], {"areas": areas, "editable": sorted(AREA_SETTING_KEYS)})
+
+
+@_command(
+    {
+        probatio.Required("type"): "yarbie/area_settings/apply",
+        probatio.Required("changes"): probatio.All(
+            [
+                {
+                    probatio.Required("area_id"): int,
+                    probatio.Optional("algorithm_type"): int,
+                    probatio.Optional("params"): dict,
+                }
+            ],
+            probatio.Length(min=1),
+        ),
+    }
+)
+async def ws_area_settings_apply(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Change several areas at once; a backup of each as it was is written first."""
+    c = _coordinator(hass, msg)
+    actor = _actor(connection)
+    result = await c.service.apply_area_settings(msg["changes"], actor)
+    c.map_stale = False
+    sent = [r for r in result["results"] if r["ok"]]
+    failed = [r for r in result["results"] if not r["ok"]]
+    if sent:
+        names = ", ".join(r["name"] or f"area {r['area_id']}" for r in sent)
+        trouble = f"\n\nNot changed: {', '.join(r['name'] or str(r['area_id']) for r in failed)}." if failed else ""
+        persistent_notification.async_create(
+            hass,
+            f"{actor} changed the settings of {names} in the Yard editor.\n\n"
+            f"Backup before the change: `{result['backup']}`{trouble}",
+            title="Yarbo area settings changed",
+            notification_id=f"{DOMAIN}_area_settings_changed",
+        )
+        hass.bus.async_fire(
+            f"{DOMAIN}_area_settings_changed",
+            {"serial": c.serial, "actor": actor, "areas": [r["area_id"] for r in sent], "backup": result["backup"]},
+        )
+        c.async_update_listeners()
+    connection.send_result(msg["id"], {**result, "areas": await c.service.area_settings()})
+
+
 # -- run history
 
 
@@ -485,8 +535,9 @@ def ws_job_subscribe(
 COMMANDS = (
     ws_info, ws_map, ws_preview, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
     ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_schedules,
-    ws_schedule_save, ws_schedule_delete, ws_areas, ws_area_params,
-    ws_area_params_save, ws_runs, ws_run, ws_route_start, ws_job_get, ws_job_subscribe,
+    ws_schedule_save, ws_schedule_delete, ws_areas, ws_area_params, ws_area_params_save,
+    ws_area_settings, ws_area_settings_apply, ws_runs, ws_run, ws_route_start, ws_job_get,
+    ws_job_subscribe,
 )
 
 
