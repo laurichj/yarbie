@@ -2,13 +2,15 @@
 
 Writes, and anything that sends the robot a command, are for admins only. Reads the
 Yarbo dashboard shows (the map, area settings, runs, wear) are open to every user, since
-dashboards are. Geometry crosses this boundary as GeoJSON in WGS84 only.
+dashboards are; those users get what was last read rather than making the robot be asked
+again. Geometry crosses this boundary as GeoJSON in WGS84 only.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 import functools
+import time
 from typing import Any
 
 import probatio
@@ -32,6 +34,7 @@ from .jobs import Job
 Handler = Callable[[HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[None]]
 Command = websocket_api.WebSocketCommandHandler
 ENTRY = probatio.Optional("entry_id")
+PROGRESS_FRESH_S = 5.0
 
 
 def _coordinator(hass: HomeAssistant, msg: dict[str, Any]) -> YarbieCoordinator:
@@ -87,6 +90,10 @@ def _read(schema: dict[Any, Any]) -> Callable[[Handler], Command]:
     return _command(schema, admin=False)
 
 
+def _admin(connection: websocket_api.ActiveConnection) -> bool:
+    return connection.user is not None and connection.user.is_admin
+
+
 def _actor(connection: websocket_api.ActiveConnection) -> str:
     user = connection.user
     return (user.name if user and user.name else None) or "unknown user"
@@ -117,7 +124,6 @@ async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
             # Which dashboard view is this robot's (the strategy names them by device when
             # there are several robots).
             "device_id": device.id if device else None,
-            "robots": len(hass.config_entries.async_loaded_entries(DOMAIN)),
             "serial": c.serial,
             "source": c.robot.name,
             "connected": c.robot.connected,
@@ -137,8 +143,13 @@ async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
 @_read({probatio.Required("type"): "yarbie/map"})
 async def ws_map(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
-    view = await c.service.load()
-    c.map_stale = False
+    # Others are shown the map as last read, unless it is known to have changed: only the
+    # editor (admins) needs the robot's map as it is this moment.
+    if not _admin(connection) and c.service.last and not c.map_stale:
+        view = c.service.last
+    else:
+        view = await c.service.load()
+        c.map_stale = False
     connection.send_result(msg["id"], view.public())
 
 
@@ -183,6 +194,7 @@ async def ws_apply(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     actor = _actor(connection)
     result = await c.service.apply(msg["features"], msg["revision"], actor)
     c.map_stale = False
+    c.area_settings_read = None  # names and patterns may have changed
     if result["applied"]:
         _announce(hass, c, actor, result)
     connection.send_result(msg["id"], result)
@@ -258,14 +270,20 @@ async def ws_imagery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
 async def ws_progress(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The current (or last) run: each area's route split into the part mowed and the rest."""
     c = _coordinator(hass, msg)
+    # Every open yard card polls this during a run: ask the robot at most every few seconds.
+    now = time.monotonic()
+    if c.progress_read and now - c.progress_read[0] < PROGRESS_FRESH_S:
+        connection.send_result(msg["id"], c.progress_read[1])
+        return
     got = await c.robot.plan_progress()
     ref = c.service.last_reference or (await c.service.load()).reference
     if got is None or ref is None:
-        connection.send_result(msg["id"], {"running": False, "plan": None})
-        return
-    feedback, raw = got
-    names = {p.id: p.name for p in c.plans}
-    connection.send_result(msg["id"], routes.progress(feedback, raw, ref, names))
+        result: dict[str, Any] = {"running": False, "plan": None}
+    else:
+        feedback, raw = got
+        result = routes.progress(feedback, raw, ref, {p.id: p.name for p in c.plans})
+    c.progress_read = (now, result)
+    connection.send_result(msg["id"], result)
 
 
 @_read(
@@ -274,7 +292,9 @@ async def ws_progress(hass: HomeAssistant, connection: websocket_api.ActiveConne
 async def ws_heatmap(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Estimated wear: run history spread over today's map (no tracks are recorded)."""
     c = _coordinator(hass, msg)
-    connection.send_result(msg["id"], await c.service.heatmap(msg["days"] or None, msg["refresh"]))
+    # Only admins may make it read the robot's history again.
+    refresh = msg["refresh"] and _admin(connection)
+    connection.send_result(msg["id"], await c.service.heatmap(msg["days"] or None, refresh))
 
 
 def _plan_dict(p: Any) -> dict[str, Any]:
@@ -284,7 +304,9 @@ def _plan_dict(p: Any) -> dict[str, Any]:
 @_read({probatio.Required("type"): "yarbie/plans/list"})
 async def ws_plans(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
-    c.plans = await c.robot.plans()
+    # Others get the plans as last read (the coordinator reads them again regularly).
+    if _admin(connection) or not c.plans:
+        c.plans = await c.robot.plans()
     connection.send_result(msg["id"], [_plan_dict(p) for p in c.plans])
 
 
@@ -402,7 +424,7 @@ async def ws_areas(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     connection.send_result(msg["id"], sorted(areas, key=lambda a: a["id"]))
 
 
-@_read({probatio.Required("type"): "yarbie/area_params/get", probatio.Required("area_id"): int})
+@_command({probatio.Required("type"): "yarbie/area_params/get", probatio.Required("area_id"): int})
 async def ws_area_params(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
     params = await c.robot.mower_area_params(msg["area_id"])
@@ -419,6 +441,7 @@ async def ws_area_params(hass: HomeAssistant, connection: websocket_api.ActiveCo
 async def ws_area_params_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
     sent = await c.service.update_mower_area_params(msg["area_id"], msg["changes"])
+    c.area_settings_read = None
     connection.send_result(msg["id"], {"sent": sent})
 
 
@@ -426,8 +449,11 @@ async def ws_area_params_save(hass: HomeAssistant, connection: websocket_api.Act
 async def ws_area_settings(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Every area's pattern and mowing settings, for the Area settings table."""
     c = _coordinator(hass, msg)
-    areas = await c.service.area_settings()
-    c.map_stale = False
+    # Reading every area asks the robot once per area: others get the last reading.
+    if _admin(connection) or c.area_settings_read is None:
+        c.area_settings_read = await c.service.area_settings()
+        c.map_stale = False
+    areas = c.area_settings_read
     connection.send_result(msg["id"], {"areas": areas, "editable": sorted(AREA_SETTING_KEYS)})
 
 
@@ -452,6 +478,7 @@ async def ws_area_settings_apply(hass: HomeAssistant, connection: websocket_api.
     actor = _actor(connection)
     result = await c.service.apply_area_settings(msg["changes"], actor)
     c.map_stale = False
+    c.area_settings_read = None  # read again when next asked
     sent = [r for r in result["results"] if r["ok"]]
     failed = [r for r in result["results"] if r["error"]]
     if sent:
@@ -486,7 +513,7 @@ async def ws_area_settings_apply(hass: HomeAssistant, connection: websocket_api.
 async def ws_runs(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Every run, newest first: the robot's records joined with yarbie's own log."""
     c = _coordinator(hass, msg)
-    merged = await c.async_runs(msg["refresh"])
+    merged = await c.async_runs(msg["refresh"] and _admin(connection))
     # Every plan with runs, before filtering: the panel's plan picker is built from this.
     plans = sorted({(r["plan_id"], r["plan"]) for r in merged if r["plan_id"] is not None}, key=lambda p: str(p[1]))
     if "plan_id" in msg:
