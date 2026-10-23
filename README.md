@@ -5,10 +5,14 @@ A Home Assistant integration for Yarbo robots, with a map editor in the sidebar.
 - **The robot in Home Assistant**: a lawn mower entity (start the chosen plan, pause,
   dock), plan select, battery, activity, run progress and time left, faults, rain, the
   stop button, RTK, lights, voice prompts, person detection, child lock, its position,
-  plan start/pause/finish events, and the map as an image.
+  plan start/pause/finish events, the map as an image, a switch per schedule and a
+  schedules calendar.
+- **Dashboard cards**: plans (create, edit areas and their order, delete, start) and
+  schedules, placed by the Yarbo dashboard.
 - **The Yard editor**: the robot's map over satellite imagery. Reshape and rename work
-  areas, draw no-go zones, pathways and sidewalks, edit plans and per-area mowing settings,
-  and preview the route the robot would take.
+  areas, draw no-go zones, pathways and sidewalks, edit per-area mowing settings, and
+  preview the route a plan would take. **Area settings** shows every area's settings in
+  one table, to set a value on many areas at once and see which ones differ.
 
 It talks to the robot's own MQTT broker on your network through
 [yarbo-local](https://github.com/yarbo-local/yarbo-local) and nothing else: no Yarbo
@@ -27,15 +31,25 @@ them like anything drawn in the app.
 | Pathways, sidewalks | ✓ | ✓ | ✓ |
 | Work areas | export only* | ✓ shape, name, mowing pattern | export only |
 | Plans, mowing settings | ✓ | ✓ | ✓ (plans) |
+| Schedules | ✓† | ✓† | ✓ |
 
 \* The robot maps a new area by driving round it, and there is no verified delete command.
 
+† Only a disabled schedule has been stored on a real robot so far. What `week_day`,
+`schedule_type` and `return_method` mean when one fires is not confirmed, so yarbie
+shows and sends the robot's own numbers, starts new schedules with the app's (1, 3 and
+2), and labels them unconfirmed. The calendar reads `week_day` as a bitmask with Monday
+as 1, and says on every event that this is a guess. Captures from the Yarbo app are
+needed to settle it ([docs/ha-design.md](docs/ha-design.md), TODO 4).
+
 Safety rails:
 - Every apply first saves the robot's full map to `/config/yarbie/backups/`, named with
-  who sent it. HA's own backups include that folder.
+  who sent it. A change in Area settings first saves every affected area's settings
+  there too. HA's own backups include that folder.
 - An apply is refused if the map changed since you loaded it, for example from the app.
-- Map, plan and settings writes are refused while a plan is running or paused.
-- Apply needs a second click to confirm.
+- Map, plan, schedule and settings writes are refused while a plan is running or paused,
+  and are sent one at a time.
+- Apply, and sending from Area settings, need a second click to confirm.
 - The change list warns when a pathway loses its link to the dock. Without one, plans that
   start from the dock fail with WP005.
 - If the robot reports firmware the command list was not verified on, writes turn off and
@@ -43,8 +57,8 @@ Safety rails:
   (start, pause, dock, lights) keep working.
 - Options: **Allow map writes** (a kill switch) and **Observe only** (send the robot
   nothing; for running beside another integration).
-- The editor is an admin-only panel, behind Home Assistant's login. There is no raw
-  command action.
+- The editor is an admin-only panel, behind Home Assistant's login. The plan and schedule
+  cards change things only for admins. There is no raw command action.
 
 ## Install
 
@@ -60,7 +74,9 @@ Home Assistant 2026.10 or newer, able to reach the robot on TCP port 1883.
 4. For a dashboard: Settings, Dashboards, Add dashboard, **Yarbo** (under Community
    dashboards). It lays out the robot, its controls, the map and recent activity in
    three columns, and builds itself from the robot's entities each time it opens, so
-   renaming them needs no editing. With two robots it gets a view each.
+   renaming them needs no editing. With two robots it gets a view each. Plans and
+   schedules are edited on its cards (**Yarbo plans** and **Yarbo schedules**, which any
+   dashboard can use too).
 
 The robot's address is kept and checked at each start; if the robot has moved, yarbie
 scans for it by serial. Set a subnet in the options if the robot is on another network.
