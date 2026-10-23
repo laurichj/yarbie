@@ -555,6 +555,46 @@ current-run overlay all leave. The header loses the Map / Area settings switch.
   bundle stays loaded on every page, so the MapLibre part loads only when a yard card is
   on screen.
 
+### 7. A real build and release process (stop committing built JS)
+
+Today the Vite output in `custom_components/yarbie/www/` is committed, because HACS
+installs the repository as it stands and Home Assistant never runs `npm`. That costs:
+- **History:** every rebuild stores another ~1.5 MB editor bundle. `main` held 17 versions
+  of `www/` (about 10 MB before compression) after 7 rebuilds.
+- **Conflicts:** the file names carry content hashes, so any two branches that rebuild
+  conflict in `www/`.
+- **Drift:** nothing checks that the committed bundle matches `frontend/src`.
+
+There is also no CI at all. A missing file (the vendored protocol data, kept out by a
+`.gitignore` rule) reached GitHub, and only a fresh clone showed it.
+
+**The process to build:**
+- **CI on every push and PR** (GitHub Actions):
+  - `pytest` against the simulator
+  - `ty check custom_components tests`
+  - `npm ci && npm run typecheck && npm run build`
+  - `python3 scripts/vendor_yarbo_local.py --check`
+  - A check that the integration loads from a clean checkout (the fresh-clone test above),
+    with HA's own `hassfest` and the HACS validation action for the manifest, `hacs.json`
+    and translations.
+- **Releases from tags:** pushing `vX.Y.Z` runs the same checks, builds the frontend, and
+  zips `custom_components/yarbie` (with `www/` built) as `yarbie.zip` on a GitHub release.
+  - The tag must match `manifest.json`'s `version`, which the workflow checks.
+  - Release notes come from the commits since the last tag (or a `CHANGELOG.md`).
+- **HACS installs the release, not the branch:** `hacs.json` gets `"zip_release": true`
+  and `"filename": "yarbie.zip"`. HACS then offers versions, and updating is a release
+  away.
+- **Stop committing `www/`:** add it to `.gitignore` and remove the built files from git.
+  Locally `npm run build` or `npm run watch` still fill it, so `scripts/dev_ha.sh` works as
+  now. `panel.py` already logs and skips the panel when the build is missing.
+  - The vendored yarbo-local copy stays committed: it is small text, and its own check
+    guards it.
+- **Docs:** README sections on releasing (bump the version, tag, push) and on installing a
+  specific version from HACS.
+
+**Order:** land this after the open branches that rebuild `www/` (#5, #6), or rebase them
+onto it and drop their `www/` changes. From then on, a branch never commits build output.
+
 ## Appendix: delta against markus-lassfolk's integration (mower only)
 
 - **Same:**
