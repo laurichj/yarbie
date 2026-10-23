@@ -1,6 +1,8 @@
-"""The Yard editor's API: websocket commands on HA's own connection, admins only.
+"""The Yard editor's and the dashboard cards' API: websocket commands on HA's own connection.
 
-Geometry crosses this boundary as GeoJSON in WGS84 only.
+Writes, and anything that sends the robot a command, are for admins only. Reads the
+Yarbo dashboard shows (the map, area settings, runs, wear) are open to every user, since
+dashboards are. Geometry crosses this boundary as GeoJSON in WGS84 only.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import probatio
 from homeassistant.components import persistent_notification, websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import schedules
@@ -57,15 +60,13 @@ def _code(err: Exception) -> str:
     return "unknown_error"
 
 
-def _command(schema: dict[Any, Any]) -> Callable[[Handler], Command]:
-    """An admin-only async command whose exceptions become error replies."""
+def _command(schema: dict[Any, Any], *, admin: bool = True) -> Callable[[Handler], Command]:
+    """An async command whose exceptions become error replies; admin-only unless ``admin``
+    is False (reads the dashboard cards show every user)."""
 
     def wrap(fn: Handler) -> Command:
-        @websocket_api.websocket_command({**schema, ENTRY: str})
-        @websocket_api.require_admin
-        @websocket_api.async_response
         @functools.wraps(fn)
-        async def handler(
+        async def guarded(
             hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
         ) -> None:
             try:
@@ -73,9 +74,17 @@ def _command(schema: dict[Any, Any]) -> Callable[[Handler], Command]:
             except (LookupError, ConflictError, ReadOnlyError, ValueError, YarboError, TimeoutError) as err:
                 connection.send_error(msg["id"], _code(err), str(err) or type(err).__name__)
 
-        return handler
+        handler = websocket_api.async_response(guarded)
+        if admin:
+            handler = websocket_api.require_admin(handler)
+        return websocket_api.websocket_command({**schema, ENTRY: str})(handler)
 
     return wrap
+
+
+def _read(schema: dict[Any, Any]) -> Callable[[Handler], Command]:
+    """A command that only reads, open to every logged-in user like the dashboard."""
+    return _command(schema, admin=False)
 
 
 def _actor(connection: websocket_api.ActiveConnection) -> str:
@@ -86,7 +95,7 @@ def _actor(connection: websocket_api.ActiveConnection) -> str:
 # -- robot and map
 
 
-@_command({probatio.Required("type"): "yarbie/info"})
+@_read({probatio.Required("type"): "yarbie/info"})
 async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
     reason = None
@@ -98,12 +107,17 @@ async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
     position = None
     if (lonlat := c.position_wgs84()) is not None and state.position is not None:
         position = {"lat": lonlat[0], "lon": lonlat[1], "phi": state.position[2]}
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, c.serial), c.entry.entry_id)
     # Answered from what the session already holds: the panel polls this, the robot is
     # not asked anything.
     connection.send_result(
         msg["id"],
         {
             "entry_id": c.entry.entry_id,
+            # Which dashboard view is this robot's (the strategy names them by device when
+            # there are several robots).
+            "device_id": device.id if device else None,
+            "robots": len(hass.config_entries.async_loaded_entries(DOMAIN)),
             "serial": c.serial,
             "source": c.robot.name,
             "connected": c.robot.connected,
@@ -120,7 +134,7 @@ async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
     )
 
 
-@_command({probatio.Required("type"): "yarbie/map"})
+@_read({probatio.Required("type"): "yarbie/map"})
 async def ws_map(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
     view = await c.service.load()
@@ -240,7 +254,7 @@ async def ws_imagery(hass: HomeAssistant, connection: websocket_api.ActiveConnec
 # -- runs, plans and area settings
 
 
-@_command({probatio.Required("type"): "yarbie/progress"})
+@_read({probatio.Required("type"): "yarbie/progress"})
 async def ws_progress(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The current (or last) run: each area's route split into the part mowed and the rest."""
     c = _coordinator(hass, msg)
@@ -254,7 +268,7 @@ async def ws_progress(hass: HomeAssistant, connection: websocket_api.ActiveConne
     connection.send_result(msg["id"], routes.progress(feedback, raw, ref, names))
 
 
-@_command(
+@_read(
     {probatio.Required("type"): "yarbie/heatmap", probatio.Optional("days", default=0): int, probatio.Optional("refresh", default=False): bool}
 )
 async def ws_heatmap(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
@@ -267,7 +281,7 @@ def _plan_dict(p: Any) -> dict[str, Any]:
     return {"id": p.id, "name": p.name, "area_ids": list(p.area_ids), "self_order": p.self_order}
 
 
-@_command({probatio.Required("type"): "yarbie/plans/list"})
+@_read({probatio.Required("type"): "yarbie/plans/list"})
 async def ws_plans(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
     c.plans = await c.robot.plans()
@@ -370,7 +384,7 @@ async def ws_schedule_delete(hass: HomeAssistant, connection: websocket_api.Acti
     connection.send_result(msg["id"], {"deleted": msg["schedule_id"], **_schedules_reply(c)})
 
 
-@_command({probatio.Required("type"): "yarbie/areas/list"})
+@_read({probatio.Required("type"): "yarbie/areas/list"})
 async def ws_areas(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The work areas by id and name, for cards that need no geometry."""
     c = _coordinator(hass, msg)
@@ -388,7 +402,7 @@ async def ws_areas(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     connection.send_result(msg["id"], sorted(areas, key=lambda a: a["id"]))
 
 
-@_command({probatio.Required("type"): "yarbie/area_params/get", probatio.Required("area_id"): int})
+@_read({probatio.Required("type"): "yarbie/area_params/get", probatio.Required("area_id"): int})
 async def ws_area_params(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
     params = await c.robot.mower_area_params(msg["area_id"])
@@ -408,7 +422,7 @@ async def ws_area_params_save(hass: HomeAssistant, connection: websocket_api.Act
     connection.send_result(msg["id"], {"sent": sent})
 
 
-@_command({probatio.Required("type"): "yarbie/area_settings/get"})
+@_read({probatio.Required("type"): "yarbie/area_settings/get"})
 async def ws_area_settings(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Every area's pattern and mowing settings, for the Area settings table."""
     c = _coordinator(hass, msg)
@@ -445,7 +459,7 @@ async def ws_area_settings_apply(hass: HomeAssistant, connection: websocket_api.
         trouble = f"\n\nNot changed: {', '.join(r['name'] or str(r['area_id']) for r in failed)}." if failed else ""
         persistent_notification.async_create(
             hass,
-            f"{actor} changed the settings of {names} in the Yard editor.\n\n"
+            f"{actor} changed the settings of {names} from Area settings.\n\n"
             f"Backup before the change: `{result['backup']}`{trouble}",
             title="Yarbo area settings changed",
             notification_id=f"{DOMAIN}_area_settings_changed",
@@ -461,7 +475,7 @@ async def ws_area_settings_apply(hass: HomeAssistant, connection: websocket_api.
 # -- run history
 
 
-@_command(
+@_read(
     {
         probatio.Required("type"): "yarbie/runs/list",
         probatio.Optional("refresh", default=False): bool,
@@ -487,7 +501,7 @@ async def ws_runs(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
     )
 
 
-@_command({probatio.Required("type"): "yarbie/runs/get", probatio.Required("key"): str})
+@_read({probatio.Required("type"): "yarbie/runs/get", probatio.Required("key"): str})
 async def ws_run(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """One run in full: its work segments, timeline, and each area's state for the map."""
     c = _coordinator(hass, msg)

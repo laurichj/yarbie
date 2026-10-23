@@ -99,7 +99,11 @@ def _last_attrs(c: YarbieCoordinator) -> dict[str, Any]:
     if not run:
         return {}
     keys = ("plan", "started_by", "charge_trips", "battery_used", "mowed_m2", "rain", "faults")
-    return {k: run[k] for k in keys if run.get(k) is not None}
+    attrs = {k: run[k] for k in keys if run.get(k) is not None}
+    # The run's key: the Yarbo dashboard shows that run with ``?run=<key>``.
+    if run.get("key"):
+        attrs["run"] = run["key"]
+    return attrs
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -214,13 +214,42 @@ async def test_kill_switch_refuses_writes(ws: WS) -> None:
     assert (await ws("yarbie/info"))["result"]["read_only_reason"]
 
 
-async def test_non_admins_are_refused(
+async def test_non_admins_read_but_never_write(
     hass: HomeAssistant, hass_ws_client: Any, hass_read_only_access_token: str, entry: MockConfigEntry
 ) -> None:
-    client = await hass_ws_client(hass, hass_read_only_access_token)
-    await client.send_json_auto_id({"type": "yarbie/map"})
-    reply = await client.receive_json()
-    assert reply["error"]["code"] == "unauthorized"
+    """The dashboard cards show every user the map, area settings and runs; anything that
+    changes the robot, asks it for a route, or reveals the imagery key stays admin-only."""
+    ws = WS(await hass_ws_client(hass, hass_read_only_access_token))
+    body = await _map(ws)
+    for read in ("yarbie/info", "yarbie/areas/list", "yarbie/area_settings/get", "yarbie/runs/list", "yarbie/progress", "yarbie/plans/list"):
+        reply = await ws(read)
+        assert reply["success"], (read, reply)
+    area = next(f["properties"]["id"] for f in body["features"]["features"] if f["properties"]["family"] == "areas")
+    assert (await ws("yarbie/area_params/get", area_id=area))["success"]
+
+    writes: list[tuple[str, dict[str, Any]]] = [
+        ("yarbie/apply", {"features": body["features"], "revision": body["revision"]}),
+        ("yarbie/preview", {"features": body["features"]}),
+        ("yarbie/area_settings/apply", {"changes": [{"area_id": area, "params": {"edge_circles": 2}}]}),
+        ("yarbie/area_params/save", {"area_id": area, "changes": {"edge_circles": 2}}),
+        ("yarbie/plans/save", {"name": "x", "area_ids": [area]}),
+        ("yarbie/route/start", {"plan_id": 1}),
+        ("yarbie/imagery", {}),
+        ("yarbie/backups/list", {}),
+    ]
+    for type_, data in writes:
+        reply = await ws(type_, **data)
+        assert reply["error"]["code"] == "unauthorized", (type_, reply)
+
+
+async def test_info_names_the_device(hass: HomeAssistant, ws: WS, entry: MockConfigEntry) -> None:
+    """The editor links to the robot's dashboard views, which are named by device."""
+    from homeassistant.helpers import device_registry as dr
+
+    info = (await ws("yarbie/info"))["result"]
+    device = dr.async_get(hass).async_get(info["device_id"])
+    assert device is not None and device.config_entry_id == entry.entry_id
+    assert info["robots"] == 1
 
 
 def test_finished_parts_from_records_and_bare_ids() -> None:

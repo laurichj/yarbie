@@ -125,5 +125,7 @@ async def test_runs_api_and_last_run_sensors(hass: HomeAssistant, ws: WS, entry:
     assert missing["error"]["code"] == "not_found"
 
     assert state(hass, "sensor.yarbo_last_run").state == "completed"
+    # The key the dashboard's ?run= link takes.
+    assert state(hass, "sensor.yarbo_last_run").attributes["run"] == listed["runs"][0]["key"]
     assert state(hass, "sensor.yarbo_last_run_progress").state == "100"
     assert state(hass, "sensor.yarbo_last_run_work_time").state == str(round((3300 + 800) / 60, 1))
