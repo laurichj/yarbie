@@ -65,7 +65,7 @@ jobs:
         run: npm ci && npm run typecheck && npm run build
       - name: Zip the integration
         run: python3 scripts/build_release_zip.py
-      # The zip as HACS would install it, with only the tests and their fixtures beside it.
+      # The zip as HACS would install it, with only the tests and what they read beside it.
       - name: pytest against the zip
         run: |
           python3 -m venv .venv && .venv/bin/pip3 install -e '.[dev]'
@@ -73,8 +73,7 @@ jobs:
           mkdir -p "$check/custom_components/yarbie"
           unzip -q yarbie.zip -d "$check/custom_components/yarbie"
           cp -R tests pyproject.toml "$check/"
-          ln -s "$GITHUB_WORKSPACE/third_party" "$check/third_party"
-          ln -s "$GITHUB_WORKSPACE/blueprints" "$check/blueprints"
+          for dir in third_party blueprints scripts; do ln -s "$GITHUB_WORKSPACE/$dir" "$check/$dir"; done
           cd "$check"
           "$GITHUB_WORKSPACE/.venv/bin/python" -c 'import custom_components.yarbie as m, sys; sys.exit(not m.__file__.startswith(sys.argv[1]))' "$check"
           "$GITHUB_WORKSPACE/.venv/bin/pytest" -q -p no:cacheprovider
