@@ -72,7 +72,10 @@ let armedApply = false;
 let offsetMetres: [number, number] = loadOffset(imagery);
 // Smoothed outlines on show, not yet taken as edits; and those ticked in "Smooth all".
 let smoothPending: Smoothed[] = [];
-const smoothFrom = new Map<string, string>(); // the outline each was worked out from
+let smoothFrom = new Map<string, string>(); // the outline each was worked out from
+// Bumped by every request and every clear, so a reply that comes back after the selection
+// changed, the panel closed or a newer request went out is dropped.
+let smoothAsked = 0;
 const smoothTicked = new Set<string>();
 let smoothAllOpen = false;
 
@@ -869,7 +872,7 @@ function renderSelection() {
           }</select></label>`
         : ""
     }
-    ${smoothable(feature) ? smoothFieldset(feature) : ""}
+    ${smoothable(feature) && !smoothAllOpen ? smoothFieldset(feature) : ""}
     ${
       p.family === "nogozones" && feature.geometry.type === "Polygon"
         ? `<fieldset><legend>Make it a circle</legend>
@@ -907,7 +910,7 @@ function renderSelection() {
   $("sel-pattern")?.addEventListener("change", (e) =>
     editor.updateProperties(id, { algorithm_type: Number((e.target as HTMLSelectElement).value) }),
   );
-  if (smoothable(feature)) wireSmoothFieldset(feature);
+  if (smoothable(feature) && !smoothAllOpen) wireSmoothFieldset(feature);
   if (p.family === "nogozones" && feature.geometry.type === "Polygon") {
     const fit = circleFit(feature.geometry.coordinates[0]);
     const radius = $("circle-r") as HTMLInputElement;
@@ -972,6 +975,7 @@ function drawSmooth() {
 }
 
 function clearSmooth() {
+  smoothAsked++;
   if (!smoothPending.length) return;
   smoothPending = [];
   smoothTicked.clear();
@@ -988,13 +992,20 @@ function dropStaleSmooth() {
   if (smoothAllOpen) renderSmoothAll();
 }
 
+/** Ask for smoothed outlines; false if it failed or the answer is no longer wanted. */
 async function proposeSmooth(ids: string[]): Promise<boolean> {
+  const asked = ++smoothAsked;
+  // The outlines as sent, not as they are when the answer comes: an outline dragged in
+  // the meantime must not look as if this preview was worked out from it.
+  const sent = editor.collection();
+  const from = new Map(sent.features.map((f) => [f.id, JSON.stringify(f.geometry)]));
   try {
-    const { results } = await api.smooth(editor.collection(), ids, tolerance(smoothing()), choices.arcs, choices.keepShared);
+    const { results } = await api.smooth(sent, ids, tolerance(smoothing()), choices.arcs, choices.keepShared);
+    if (asked !== smoothAsked) return false;
     smoothPending = results;
-    smoothFrom.clear();
-    for (const r of results) smoothFrom.set(r.id, JSON.stringify(editor.feature(r.id)?.geometry));
+    smoothFrom = from;
     drawSmooth();
+    dropStaleSmooth();
     return true;
   } catch (err) {
     say(`Could not smooth: ${message(err)}`, "error");
@@ -1105,6 +1116,7 @@ function renderSmoothAll() {
     smoothAllOpen = false;
     clearSmooth();
     renderSmoothAll();
+    if (selectedId) renderSelection(); // its own Smooth outline is back
   });
   box.querySelectorAll<HTMLInputElement>("input[data-smooth]").forEach((input) =>
     input.addEventListener("change", () => {
@@ -1127,6 +1139,7 @@ function renderSmoothAll() {
     const n = useSmoothed(smoothPending.filter((r) => smoothTicked.has(r.id)));
     smoothAllOpen = false;
     renderSmoothAll();
+    if (selectedId) renderSelection();
     say(`Smoothed ${n} outline${n === 1 ? "" : "s"}. They are changes to review and apply like any other; Undo takes them all back.`, "ok");
   });
 }

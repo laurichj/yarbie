@@ -57,6 +57,7 @@ export interface Smoothing {
   tolerance_m: number;
   unit: "in" | "cm";
   unit_m: number;
+  limits: [number, number]; // what the options form accepts, in ``unit``
 }
 
 export interface Smoothed {

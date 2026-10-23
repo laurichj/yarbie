@@ -49,7 +49,9 @@ def _densify(ring: list[list[float]], step_m: float = 0.35, wobble_m: float = 0.
 
 async def test_smooth_proposes_without_sending(ws: WS) -> None:
     info = (await ws("yarbie/info"))["result"]
-    assert info["smoothing"] == {"tolerance_m": 0.1524, "unit": "cm", "unit_m": 0.01}
+    assert info["smoothing"] == {
+        "tolerance_m": 0.1524, "unit": "cm", "unit_m": 0.01, "limits": [1.3, 90.0]
+    }
     body = await _map(ws)
     fc = body["features"]
     area = next(f for f in fc["features"] if f["properties"]["family"] == "areas")

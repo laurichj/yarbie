@@ -316,14 +316,7 @@ export class Editor {
 
   /** Replace an object's outline (robot coordinates), e.g. with a circle. */
   setGeometry(id: string, geometry: MapFeature["geometry"]) {
-    this.sync();
-    const target = this.all.find((f) => f.id === id);
-    if (!target) return;
-    target.geometry = geometry;
-    if (this.draw.hasFeature(id)) {
-      this.draw.updateFeatureGeometry(id, shiftGeometry(geometry, this.offset) as GeoJSONStoreFeatures["geometry"]);
-    }
-    this.checkpoint();
+    this.setGeometries(new Map([[id, geometry]]));
   }
 
   /** Replace several outlines at once, as one step to undo. */

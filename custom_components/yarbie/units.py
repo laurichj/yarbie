@@ -3,6 +3,8 @@ unit system only decides which of the two to show; everything is stored in metre
 
 from __future__ import annotations
 
+import math
+
 from homeassistant.core import HomeAssistant
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
@@ -15,3 +17,15 @@ def short_length(hass: HomeAssistant) -> tuple[str, float]:
     if hass.config.units is US_CUSTOMARY_SYSTEM:
         return "in", INCH_M
     return "cm", CENTIMETRE_M
+
+
+def limits(limits_m: tuple[float, float], unit_m: float) -> tuple[float, float]:
+    """A range in metres in a unit, to one decimal, rounded inward so it stays inside."""
+    low, high = limits_m
+    return math.ceil(low / unit_m * 10) / 10, math.floor(high / unit_m * 10) / 10
+
+
+def shown(value_m: float, limits_m: tuple[float, float], unit_m: float) -> float:
+    """A length in metres as the form shows it: one decimal, inside the unit's range."""
+    low, high = limits(limits_m, unit_m)
+    return min(max(round(value_m / unit_m, 1), low), high)

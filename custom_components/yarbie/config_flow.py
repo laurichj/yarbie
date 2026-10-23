@@ -30,11 +30,11 @@ from .const import (
     OPT_SMOOTHING_TOLERANCE,
     OPT_SMOOTHING_TOLERANCE_M,
     SIMULATOR_HOST,
-    SMOOTHING_LIMITS,
+    SMOOTHING_LIMITS_M,
 )
 from .editor import demo, smooth
 from .runlog import DEFAULT_RETENTION_DAYS
-from .units import short_length
+from .units import limits, short_length, shown
 
 
 class YarbieConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -132,14 +132,22 @@ class YarbieOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         unit, unit_m = short_length(self.hass)
         tolerance_key = OPT_SMOOTHING_TOLERANCE[unit]
-        if user_input is not None:
-            data = dict(user_input)
-            if tolerance_key in data:
-                data[OPT_SMOOTHING_TOLERANCE_M] = round(float(data.pop(tolerance_key)) * unit_m, 4)
-            return self.async_create_entry(data=data)
         options = self.config_entry.options
         tolerance = float(options.get(OPT_SMOOTHING_TOLERANCE_M, smooth.DEFAULT_TOLERANCE_M))
-        low, high = SMOOTHING_LIMITS[unit]
+        default = shown(tolerance, SMOOTHING_LIMITS_M, unit_m)
+        if user_input is not None:
+            data = dict(user_input)
+            value = data.pop(tolerance_key, default)
+            # Left as shown, the stored value stays exact: 0.1524 m shows as 15.2 cm, and
+            # saving some other option must not turn it into 0.152 m. Unless it was out of
+            # range: then what was shown (clamped) is what is kept.
+            low_m, high_m = SMOOTHING_LIMITS_M
+            unchanged = value == default and low_m <= tolerance <= high_m
+            data[OPT_SMOOTHING_TOLERANCE_M] = (
+                tolerance if unchanged else round(float(value) * unit_m, 4)
+            )
+            return self.async_create_entry(data=data)
+        low, high = limits(SMOOTHING_LIMITS_M, unit_m)
         return self.async_show_form(
             step_id="init",
             data_schema=probatio.Schema(
@@ -159,7 +167,7 @@ class YarbieOptionsFlow(OptionsFlowWithReload):
                         OPT_RUN_RETENTION_DAYS,
                         default=options.get(OPT_RUN_RETENTION_DAYS, DEFAULT_RETENTION_DAYS),
                     ): probatio.All(probatio.Coerce(int), probatio.Range(min=7, max=3650)),
-                    probatio.Optional(tolerance_key, default=round(tolerance / unit_m, 1)): probatio.All(
+                    probatio.Optional(tolerance_key, default=default): probatio.All(
                         probatio.Coerce(float), probatio.Range(min=low, max=high)
                     ),
                 }

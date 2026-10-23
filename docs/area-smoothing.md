@@ -80,13 +80,19 @@ own `ref`, as `diff.py` does, so untouched points come back exactly.
    - are on the allowed side of the edge (outside it for areas, inside it for no-go
      zones);
    - are within the tolerance of it;
-   - leave the edge crossing no other part of the outline.
+   - leave the edge crossing no other part of the outline, and passing over no other
+     driven corner on the wrong side (see the next step).
 
    When a point is on the wrong side, the run is split there first. So on a wobbly
    straight edge the kept points are the innermost wobbles (areas) or the outermost
    (no-go zones), and every kept point is one the robot actually drove.
 6. **Check every piece against the original.** A piece is kept only if:
    - it crosses no edge of the original outline;
+   - every driven corner an edge passes over (between its ends and within the
+     tolerance of it) is on the allowed side. This is the same test `_simplify` applies.
+     Without it, an edge laid along the outline's own straight edges could skip a
+     shallow notch: it touches the outline at both ends and stays within the rounding
+     slack everywhere else, so the crossing and inside tests both pass it;
    - its midpoints and new corners are on the allowed side (inside test);
    - both ways round, no point is more than the tolerance from the other line (sampled
      every tolerance-length along the new line).
@@ -124,19 +130,19 @@ Each result was checked separately with shapely:
 
 | Tolerance | Area points | No-go points | Largest move | Area lost (largest) |
 |---|---|---|---|---|
-| 3 in | 3,334 → 1,874 (−44%) | −2% | 3.0 in | — |
-| **6 in** | **3,334 → 1,561 (−53%)** | **−4%** | **5.9 in** | **Shop −10.6 m² of 2,917 (0.4%)** |
-| 12 in | 3,334 → 1,244 (−63%) | −9% | 11.9 in | — |
-| 6 in, arcs off | 3,334 → 1,488 (−55%) | −5% | 5.9 in | — |
+| 3 in | 3,334 → 1,927 (−42%) | −2% | 3.0 in | — |
+| **6 in** | **3,334 → 1,612 (−52%)** | **−4%** | **5.9 in** | **Shop −10.1 m² of 2,917 (0.3%)** |
+| 12 in | 3,334 → 1,247 (−63%) | −9% | 11.9 in | — |
+| 6 in, arcs off | 3,334 → 1,676 (−50%) | −4% | 5.9 in | — |
 
-At 6 in, per area: Driveway South 764 → 283, Shop 1,228 → 584, Tree net area
-424 → 195, East Garden Fence 245 → 115, South Garden Fence 126 → 63. The largest area
+At 6 in, per area: Driveway South 764 → 283, Shop 1,228 → 585, Tree net area
+424 → 245, East Garden Fence 245 → 115, South Garden Fence 126 → 63. The largest area
 takes about 0.5 s in pure Python; "Smooth all" on the whole map takes about 1.5 s.
 
 No-go zones barely change at 6 in because they were drawn coarsely to begin with. A few
 round ones become arcs, and some of those gain points (8 → 10), which is the cost of
-drawing them round. Arcs cost areas about 5% more points overall than straight edges
-alone, in exchange for even curves around beds and trees.
+drawing them round. For areas, arcs save points overall (1,612 against 1,676 with
+straight edges only) as well as drawing even curves round beds and trees.
 
 Known rough edge: on a wobbly straight edge, two or three kept points can sit a few
 centimetres apart. These are the innermost wobbles (for an area), and they can't be
@@ -155,6 +161,13 @@ driven ones, and that's a separate change.
   `smoothing`.
 - The options flow asks for "Smoothing tolerance (inches)" or "(centimetres)", stored in
   metres as `smoothing_tolerance_m` (default `smooth.DEFAULT_TOLERANCE_M` = 0.1524).
+- The allowed range is set once, in metres (`SMOOTHING_LIMITS_M`, 0.0127–0.9 m). Each
+  unit's range is that rounded inward (0.5–35.4 in, 1.3–90 cm), so switching unit
+  systems never leaves a stored value outside the form's range. The form, the websocket
+  command and the panel (sent as `smoothing.limits`) all use it.
+- The form's default is the stored value, rounded and kept inside that range. Saving the
+  form without changing the field keeps the stored metres exactly: 0.1524 m shows as
+  15.2 cm, and saving some other option doesn't turn it into 0.152 m.
 - The panel can override it for the session (the number box beside Preview). The
   override isn't saved.
 - Two switches, both on by default: **Round curves** (arcs), and **Keep edges shared with
@@ -189,9 +202,15 @@ check, backup before every apply, busy check, and warnings.
   "Use smoothed outline" or Discard.
 - **Draw → "Smooth all…":** previews every area and no-go zone at once. It lists each
   outline that would change (ticked by default) with its summary and totals; clicking a
-  name zooms to it. "Use ticked (N)" takes them all as **one** undo step.
+  name zooms to it. "Use ticked (N)" takes them all as **one** undo step. While it is
+  open, the Selected tab's own Smooth outline is hidden, so the two never share a
+  preview.
 - A preview is dropped as soon as its outline is edited, because it was worked out from
-  the old shape.
+  the old shape. "Old" means the outline as sent: an outline dragged while the answer
+  was being worked out counts as edited.
+- Each request is numbered, and so is each clear (a new selection, closing Smooth all).
+  A reply that comes back after a newer request or a clear is dropped, so it can't land
+  on the wrong selection.
 - The diff's "Area reshapes … rarely verified" warning still shows for every smoothed
   area. That's correct: see the risks below.
 - Known cosmetic issue: while an area is selected, the editor's corner handles are drawn

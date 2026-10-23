@@ -5,8 +5,8 @@
 import type { Family, Smoothed, Smoothing } from "./api";
 
 export const SMOOTHABLE: Family[] = ["areas", "nogozones"];
-// Until the integration has answered: 6 in.
-export const DEFAULT_SMOOTHING: Smoothing = { tolerance_m: 0.1524, unit: "in", unit_m: 0.0254 };
+// Until the integration has answered (it sends its own default and limits): 6 in.
+export const DEFAULT_SMOOTHING: Smoothing = { tolerance_m: 0.1524, unit: "in", unit_m: 0.0254, limits: [0.5, 35.4] };
 const SQ_FT_PER_M2 = 10.7639;
 
 /** This session's choices; the tolerance starts from the integration options. */
@@ -52,7 +52,7 @@ export function changes(r: Smoothed): boolean {
 /** The tolerance and switches, as form fields named ``<prefix>-…``. */
 export function controls(prefix: string, s: Smoothing, areas: boolean): string {
   const step = s.unit === "in" ? 0.5 : 1;
-  const [min, max] = s.unit === "in" ? [0.5, 36] : [1, 100];
+  const [min, max] = s.limits;
   return `
     <label class="field" style="margin-top:8px">How far a line may move (${s.unit})
       <input type="number" id="${prefix}-tol" step="${step}" min="${min}" max="${max}"

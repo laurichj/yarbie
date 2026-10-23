@@ -22,8 +22,8 @@ import math
 from typing import Any, Literal
 
 from .._vendor.yarbo_local.models import local_to_wgs84
-from .diff import CROSSING_SAME_M, crossings
-from .mapdoc import Ref, dock_point, feature_key, geometry_to_local, parse_ref, site_reference
+from .diff import crossings, new_crossings
+from .mapdoc import Ref, dock_point, feature_key, geometry_to_local, lonlat, parse_ref, site_reference
 
 Pt = tuple[float, float]
 Direction = Literal["shrink", "grow"]
@@ -139,7 +139,7 @@ def smooth_ring(
 
     if arcs and not pins:
         circle = _whole_circle(pts, ctx)
-        if circle is not None and not _new_crossings(circle, before_crossings):
+        if circle is not None and not new_crossings(circle, before_crossings):
             result = _finish(original, pts, circle)
             result.circle = True
             result.arcs = 1
@@ -163,7 +163,7 @@ def smooth_ring(
     reverted = 0
     while True:
         ring, owner = _assemble(pieces)
-        added = _new_crossings(ring, before_crossings)
+        added = new_crossings(ring, before_crossings)
         if not added:
             break
         culprits = {owner[i] for p in added for i in _segments_at(ring, p)}
@@ -175,7 +175,7 @@ def smooth_ring(
         reverted += 1
 
     tidy = _tidy(ring, ctx, {pts[i] for i in pins})
-    if len(tidy) < len(ring) and not _new_crossings(tidy, before_crossings):
+    if len(tidy) < len(ring) and not new_crossings(tidy, before_crossings):
         ring = tidy
 
     result = _finish(original, pts, ring)
@@ -259,10 +259,6 @@ def _assemble(pieces: list[_Piece]) -> tuple[list[Pt], list[int]]:
     return ring, owner
 
 
-def _new_crossings(ring: list[Pt], before: list[Pt]) -> list[Pt]:
-    return [p for p in crossings(ring) if all(math.dist(p, q) > CROSSING_SAME_M for q in before)]
-
-
 def _segments_at(ring: list[Pt], p: Pt) -> list[int]:
     n = len(ring)
     return [i for i in range(n) if _segment_distance(p, ring[i], ring[(i + 1) % n]) < 1e-6]
@@ -291,7 +287,11 @@ def _simplify(run: list[Pt], ctx: _Context) -> list[Pt]:
         if b - a < 2:
             continue
         k = _worst(run, a, b, ctx)
-        if k is None and not ctx.edges.crosses(run[a], run[b]):
+        if (
+            k is None
+            and not ctx.edges.crosses(run[a], run[b])
+            and _passes_on_allowed_side(run[a], run[b], ctx)
+        ):
             continue
         if k is None:
             k = max(range(a + 1, b), key=lambda m: _segment_distance(run[m], run[a], run[b]))
@@ -502,7 +502,7 @@ def _run_ok(candidate: list[Pt], run: list[Pt], ctx: _Context, whole: bool = Fal
     limit = ctx.tolerance + SLACK_M
     originals = set(run)
     for a, b in zip(candidate, candidate[1:], strict=False):
-        if ctx.edges.crosses(a, b):
+        if ctx.edges.crosses(a, b) or not _passes_on_allowed_side(a, b, ctx):
             return False
         mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
         for p in (mid,) if b in originals else (mid, b):
@@ -515,6 +515,29 @@ def _run_ok(candidate: list[Pt], run: list[Pt], ctx: _Context, whole: bool = Fal
         return False
     old = _Grid(run, closed=False)
     return all(old.distance(p, limit) <= limit for p in _samples(candidate, ctx.tolerance))
+
+
+def _passes_on_allowed_side(a: Pt, b: Pt, ctx: _Context) -> bool:
+    """Whether every original corner the edge ``a``-``b`` passes over (between its ends
+    and within the tolerance of it) is on the allowed side, as ``_simplify`` requires.
+
+    The crossing and inside tests miss an edge laid along the outline's own straight
+    edges across a shallow notch: it touches the outline at both ends and every sample
+    of it is on the boundary or within slack of it."""
+    length = math.dist(a, b)
+    if length < SAME_POINT_M:
+        return True
+    dx, dy = (b[0] - a[0]) / length, (b[1] - a[1]) / length
+    limit = ctx.tolerance + SLACK_M
+    for i in ctx.edges._near(a, b, limit):
+        p = ctx.edges.segments[i][0]
+        along = (p[0] - a[0]) * dx + (p[1] - a[1]) * dy
+        if along <= SLACK_M or along >= length - SLACK_M:
+            continue
+        wrong = -(dx * (p[1] - a[1]) - dy * (p[0] - a[0])) * ctx.side
+        if SLACK_M < wrong <= limit:
+            return False
+    return True
 
 
 def _tidy(ring: list[Pt], ctx: _Context, fixed: set[Pt]) -> list[Pt]:
@@ -538,7 +561,7 @@ def _can_drop(u: Pt, v: Pt, w: Pt, nearby: list[Pt], ctx: _Context) -> bool:
     """Whether ``u``-``w`` can stand in for ``u``-``v``-``w``. ``nearby`` is the outline
     round ``v`` without it, for the original points that were closest to ``v``'s edges."""
     limit = ctx.tolerance + SLACK_M
-    if ctx.edges.crosses(u, w):
+    if ctx.edges.crosses(u, w) or not _passes_on_allowed_side(u, w, ctx):
         return False
     mid = ((u[0] + w[0]) / 2, (u[1] + w[1]) / 2)
     if ctx.edges.distance(mid, SLACK_M) > SLACK_M and ctx.edges.contains(mid) != ctx.shrink:
@@ -645,7 +668,7 @@ def smooth_features(
             keep=keep if family == "areas" else (),
             neighbours=[ring for k, ring in areas if k != key] if shared else (),
         )
-        ring = [_lonlat(ref, x, y) for x, y in result.points]
+        ring = [lonlat(ref, x, y) for x, y in result.points]
         out.append(
             {
                 "id": key,
@@ -654,11 +677,6 @@ def smooth_features(
             }
         )
     return out
-
-
-def _lonlat(ref: Ref, x: float, y: float) -> list[float]:
-    lat, lon = local_to_wgs84(ref, x, y)
-    return [round(lon, 9), round(lat, 9)]
 
 
 # -- small geometry

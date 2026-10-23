@@ -18,7 +18,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from ._vendor.yarbo_local.exceptions import YarboError
 from ._vendor.yarbo_local.payloads import APP_MOWER_AREA_KEYS
-from .const import DOMAIN, OPT_GOOGLE_MAPS_KEY
+from .const import DOMAIN, OPT_GOOGLE_MAPS_KEY, SMOOTHING_LIMITS_M
 from .coordinator import YarbieCoordinator
 from .editor import mapdoc, routes, runs
 from .editor.service import ConflictError, ReadOnlyError
@@ -140,7 +140,7 @@ async def ws_preview(hass: HomeAssistant, connection: websocket_api.ActiveConnec
         probatio.Required("features"): dict,
         probatio.Required("ids"): [str],
         probatio.Optional("tolerance_m"): probatio.All(
-            probatio.Coerce(float), probatio.Range(min=0.005, max=1.0)
+            probatio.Coerce(float), probatio.Range(min=SMOOTHING_LIMITS_M[0], max=SMOOTHING_LIMITS_M[1])
         ),
         probatio.Optional("arcs", default=True): bool,
         probatio.Optional("keep_shared", default=True): bool,

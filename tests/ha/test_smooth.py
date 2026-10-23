@@ -151,6 +151,31 @@ def test_already_sparse_outlines_are_left_as_they_are() -> None:
         assert not result.changed
 
 
+def _notch_context() -> smooth._Context:
+    # An area with a 5 cm notch in its top edge, between x = 6 and x = 7.
+    ring = [(0.0, -5.0), (10.0, -5.0), (10.0, 0.0), (7.0, 0.0), (7.0, -0.05), (6.0, -0.05), (6.0, 0.0), (0.0, 0.0)]
+    orient = 1 if smooth.signed_area(ring) > 0 else -1
+    return smooth._Context(TOL, -orient, True, orient, smooth._Grid(ring, closed=True))
+
+
+def test_an_edge_along_the_outline_cannot_skip_a_notch() -> None:
+    """Touching at both ends and on the boundary everywhere else is not enough: the
+    corners it passes over must be on the allowed side, or the area gains the notch."""
+    ctx = _notch_context()
+    run = [(10.0, 0.0), (7.0, 0.0), (7.0, -0.05), (6.0, -0.05), (6.0, 0.0), (0.0, 0.0)]
+    assert not smooth._run_ok([(10.0, 0.0), (0.0, 0.0)], run, ctx)
+    assert not smooth._passes_on_allowed_side((10.0, 0.0), (0.0, 0.0), ctx)
+    # Along the edge without passing over the notch is fine.
+    assert smooth._passes_on_allowed_side((10.0, 0.0), (7.0, 0.0), ctx)
+
+
+def test_a_notched_area_keeps_its_notch() -> None:
+    ring = [(0.0, -5.0), (10.0, -5.0), (10.0, 0.0), (7.0, 0.0), (7.0, -0.05), (6.0, -0.05), (6.0, 0.0), (0.0, 0.0)]
+    result = smooth.smooth_feature("areas", ring, TOL)
+    assert all(_on_or_inside(p, ring) for p in result.points)
+    assert not _inside((6.5, -0.01), result.points)
+
+
 def test_lines_are_not_smoothed() -> None:
     with pytest.raises(ValueError):
         smooth.smooth_feature("pathways", [(0.0, 0.0), (1.0, 0.0)], TOL)

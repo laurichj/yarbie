@@ -35,6 +35,7 @@ from .const import (
     OPT_SMOOTHING_TOLERANCE_M,
     PLANS_INTERVAL_S,
     PUSH_INTERVAL_S,
+    SMOOTHING_LIMITS_M,
     SIGNAL_PLAN_EVENT,
     STORAGE_VERSION,
 )
@@ -44,7 +45,7 @@ from .editor.service import MapService, ReadOnlyError
 from .jobs import Jobs
 from .robot import Robot
 from .runlog import DEFAULT_RETENTION_DAYS, RunLog, RunRecorder
-from .units import short_length
+from .units import limits, short_length
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,10 +128,17 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
 
     @property
     def smoothing(self) -> dict[str, Any]:
-        """The smoothing tolerance (metres) and the unit the panel shows it in."""
+        """The smoothing tolerance (metres), the unit the panel shows it in, and the range
+        the panel accepts in that unit (the options form's)."""
         unit, unit_m = short_length(self.hass)
         tolerance = float(self.options.get(OPT_SMOOTHING_TOLERANCE_M, smooth.DEFAULT_TOLERANCE_M))
-        return {"tolerance_m": tolerance, "unit": unit, "unit_m": unit_m}
+        low_m, high_m = SMOOTHING_LIMITS_M
+        return {
+            "tolerance_m": min(max(tolerance, low_m), high_m),
+            "unit": unit,
+            "unit_m": unit_m,
+            "limits": list(limits(SMOOTHING_LIMITS_M, unit_m)),
+        }
 
     @property
     def observe_only(self) -> bool:
