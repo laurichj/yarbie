@@ -244,47 +244,9 @@ async function call<T>(type: string, data: Record<string, unknown> = {}): Promis
   }
 }
 
-interface Job<T> {
-  id: string;
-  status: "running" | "done" | "error";
-  result: T | null;
-  error: string | null;
-}
-
-/** Start (or join) a job and wait for it to end. Following it again after a reconnect
- * picks up the same job; the robot is not asked twice. */
-async function job<T>(start: string, data: Record<string, unknown>): Promise<T> {
-  const first = await call<Job<T>>(start, data);
-  const finish = (j: Job<T>): T => {
-    if (j.status === "error") throw new ApiError(502, j.error ?? "the robot refused");
-    return j.result as T;
-  };
-  if (first.status !== "running") return finish(first);
-  return await new Promise<T>((resolve, reject) => {
-    let unsubscribe: (() => Promise<void>) | null = null;
-    let settled = false;
-    const done = (event: Job<T>) => {
-      const j = structuredClone(event);
-      if (j.status === "running" || settled) return;
-      settled = true;
-      void unsubscribe?.();
-      try {
-        resolve(finish(j));
-      } catch (err) {
-        reject(err);
-      }
-    };
-    hass!.connection
-      .subscribeMessage<Job<T>>(done, { type: "yarbie/job/subscribe", job_id: first.id })
-      .then((unsub) => {
-        unsubscribe = unsub;
-        if (settled) void unsub();
-      })
-      .catch(reject);
-  });
-}
-
 interface Info {
+  device_id: string | null;
+  robots: number;
   source: Status["source"];
   connected: boolean;
   writable: boolean;
@@ -328,6 +290,7 @@ export const api = {
       smoothing: info.smoothing,
     };
   },
+  info: () => call<Info>("info"),
   map: () => call<MapResponse>("map"),
   preview: (features: MapCollection) =>
     call<{ ops: Op[]; writable: boolean }>("preview", { features }),
@@ -340,25 +303,7 @@ export const api = {
   imagery: () => call<{ sources: Imagery[]; error?: string; hint?: string }>("imagery"),
   backups: () => call<{ name: string; bytes: number; kind: "map" | "area_settings" }[]>("backups/list"),
   backup: (name: string) => call<{ features: MapCollection }>("backups/get", { name }),
-  progress: () => call<Progress>("progress"),
-  heatmap: (days: number, refresh: boolean) => call<Heatmap>("heatmap", { days, refresh }),
-  plans: () => call<Plan[]>("plans/list"),
   dashboard: yarboDashboard,
-  route: (id: number) => job<RouteCollection>("route/start", { plan_id: id }),
-  mowerParams: (areaId: number) =>
-    call<{ params: Record<string, unknown>; editable: string[] }>("area_params/get", {
-      area_id: areaId,
-    }),
-  updateMowerParams: (areaId: number, changes: Record<string, unknown>) =>
-    call<{ sent: Record<string, unknown> }>("area_params/save", { area_id: areaId, changes }),
-  areaSettings: () => call<{ areas: AreaSettings[]; editable: string[] }>("area_settings/get"),
-  applyAreaSettings: (changes: AreaChange[]) => call<AreaSettingsResult>("area_settings/apply", { changes }),
-  runs: (refresh: boolean, planId?: number) =>
-    call<{ runs: Run[]; plans: { id: number; name: string }[]; count: number }>("runs/list", {
-      refresh,
-      ...(planId === undefined ? {} : { plan_id: planId }),
-    }),
-  run: (key: string) => call<Run>("runs/get", { key }),
   log: (kind: string, detail: unknown) =>
     hass?.callService("system_log", "write", {
       logger: "custom_components.yarbie.panel",

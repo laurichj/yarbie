@@ -10,26 +10,16 @@ import {
   TerraDrawSelectMode,
   ValidateNotSelfIntersecting,
   type GeoJSONStoreFeatures,
-  type HexColor,
 } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import type { Family, MapCollection, MapFeature } from "./api";
 import { debugLog } from "./debug";
 import { shiftGeometry, type Offset } from "./geo";
+import { COLORS } from "./yardMap";
 
 export const EDITABLE: Family[] = ["areas", "nogozones", "pathways", "sidewalks"];
 const POLYGONS: Family[] = ["areas", "nogozones"];
 
-export const COLORS: Record<Family, HexColor> = {
-  areas: "#3fb950",
-  nogozones: "#f85149",
-  novisionzones: "#a371f7",
-  elec_fence: "#db61a2",
-  pathways: "#e3b341",
-  sidewalks: "#58a6ff",
-  deadends: "#8b949e",
-  dock: "#ffffff",
-};
 
 export type Tool = "select" | "nogozones" | "pathways" | "sidewalks" | "areas";
 
