@@ -64,9 +64,12 @@ Safety rails:
 
 Home Assistant 2026.10 or newer, able to reach the robot on TCP port 1883.
 
-1. HACS, Integrations, three dots, Custom repositories: add `https://github.com/laurichj/yarbie` as an
-   Integration, install **yarbie**, restart Home Assistant. (Or copy
-   `custom_components/yarbie` into your config's `custom_components`.)
+1. HACS, three dots, Custom repositories: add `https://github.com/laurichj/yarbie` as an
+   Integration, install **yarbie**, restart Home Assistant. HACS installs the latest
+   [release](https://github.com/laurichj/yarbie/releases), whose `yarbie.zip` holds the
+   built panel. (Or unzip a release's `yarbie.zip` into your config's
+   `custom_components/yarbie`. Copying the folder from a checkout gives no panel: the
+   built frontend is not in git.)
 2. Settings, Devices & services, Add integration, **yarbie**. Leave the address empty to
    scan the network, or type the robot's address. Home Assistant also offers the robot
    when its router hands it an address (DHCP discovery).
@@ -83,6 +86,12 @@ scans for it by serial. Set a subnet in the options if the robot is on another n
 
 Blueprints for rain, low battery and finished plans are in `blueprints/automation/yarbie`.
 
+### A particular version
+
+HACS offers each release, not the branch. For an older or newer one: HACS, **yarbie**,
+three dots, **Redownload**, pick the version, then restart Home Assistant. New releases
+show up as an update in Settings, Updates.
+
 ## First time on a real robot
 
 Do this once (and again after a firmware update) before trusting writes:
@@ -98,7 +107,7 @@ Do this once (and again after a firmware update) before trusting writes:
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip3 install -e '.[dev]'
-(cd frontend && npm ci && npm run build)   # builds the panel into custom_components/yarbie/www
+(cd frontend && npm ci && npm run build)   # builds the panel into custom_components/yarbie/www (not in git)
 scripts/dev_ha.sh                          # a throwaway HA on http://127.0.0.1:8123
 ```
 
@@ -113,6 +122,39 @@ Checks:
 (cd frontend && npm run typecheck)
 python3 scripts/vendor_yarbo_local.py --check
 ```
+
+The built panel in `custom_components/yarbie/www/` is ignored by git; never commit it.
+Releases build it.
+
+### CI
+
+`.github/workflows/ci.yml` runs on every push and pull request, on a fresh checkout:
+
+- the checks above, plus the frontend build;
+- `scripts/build_release_zip.py`, which zips the integration exactly as a release would,
+  then the test suite against the unzipped copy (so a file missing from the zip fails);
+- Home Assistant's `hassfest` and the HACS validation action.
+
+Each run keeps that `yarbie.zip` as an artifact for 14 days (the run's page, Artifacts),
+for trying a branch on a real Home Assistant before it is released.
+
+### Releasing
+
+1. Set the new version in `custom_components/yarbie/manifest.json` and `pyproject.toml`
+   (both the same, `X.Y.Z`), commit, and merge to `main`.
+2. Tag that commit and push the tag:
+
+   ```sh
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+
+`.github/workflows/release.yml` then checks the tag equals the manifest's version, runs
+CI, and publishes a GitHub release with `yarbie.zip` and notes listing the commits since
+the previous tag. HACS offers it from then on. Run **Release** by hand (Actions, Release,
+Run workflow) for a dry run: the same checks and zip, as an artifact, and no release.
+
+To build the zip locally: `(cd frontend && npm ci && npm run build)`, then
+`python3 scripts/build_release_zip.py`.
 
 ### yarbo-local
 

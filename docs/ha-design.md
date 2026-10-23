@@ -28,6 +28,11 @@ Done on branch `feature/plans-schedules-areas` (checked with the simulator):
   numbers mean is still unconfirmed; step 1 of TODO 4 (captures from the app) is open.
 - The Area settings view (TODO 5): a table of every area's settings, set in bulk.
 
+Done on branch `build-release`:
+
+- The build and release process (TODO 7): CI on every push and PR, releases from
+  `vX.Y.Z` tags with `yarbie.zip` for HACS, and `www/` no longer in git.
+
 Where the build differs from the plan below:
 
 - **Vendoring layout.** The subtree holds the whole upstream repo at
@@ -124,9 +129,11 @@ custom_components/yarbie/
     discovery.py  today's discovery, plus a DHCP hint
     imagery.py    Google Map Tiles session, on HA's aiohttp session and Store
     jobs.py       long-running robot calls (route preview, history read)
-  _vendor/yarbo_local/                      git subtree of our fork
-  www/yarbie-panel.js                       built from frontend/
+  _vendor/yarbo_local/                      copied from third_party/yarbo-local
+  www/yarbie-panel.js                       built from frontend/; not in git
 frontend/            TypeScript source. A Vite library build writes www/
+.github/workflows/   ci.yml (every push and PR), release.yml (vX.Y.Z tags)
+scripts/             dev_ha.sh, vendor_yarbo_local.py, build_release_zip.py
 blueprints/automation/yarbie/
 tests/               pytest-homeassistant-custom-component, against the simulator
 hacs.json
@@ -667,7 +674,7 @@ current-run overlay all leave. The header loses the Map / Area settings switch.
   bundle stays loaded on every page, so the MapLibre part loads only when a yard card is
   on screen.
 
-### 7. A real build and release process (stop committing built JS)
+### 7. A real build and release process (stop committing built JS) (done)
 
 Today the Vite output in `custom_components/yarbie/www/` is committed, because HACS
 installs the repository as it stands and Home Assistant never runs `npm`. That costs:
@@ -706,6 +713,32 @@ There is also no CI at all. A missing file (the vendored protocol data, kept out
 
 **Order:** land this after the open branches that rebuild `www/` (#5, #6), or rebase them
 onto it and drop their `www/` changes. From then on, a branch never commits build output.
+
+**Built** (branch `build-release`, after #5 and #6 merged), as planned except:
+- **CI builds the zip on every run.** `scripts/build_release_zip.py` zips git's files in
+  `custom_components/yarbie` plus the built `www/` (no `__pycache__`, tests or symlinks,
+  fixed timestamps, so the same tree gives the same zip). CI then runs the test suite
+  against the unzipped copy, the fresh-clone check applied to what HACS installs. Each run
+  keeps the zip as an artifact, and `release.yml` publishes CI's zip rather than building
+  its own. Running `release.yml` by hand is a dry run that stops there.
+- **The zip's root is the integration folder.** HACS extracts a `zip_release` asset
+  straight into `custom_components/<domain>` (`download_zip_files` in HACS's
+  `repositories/base.py`), so `manifest.json` sits at the root, not under
+  `custom_components/yarbie/`.
+- **`hide_default_branch`.** The branch no longer holds the built panel, so HACS offers
+  only releases. Until the first tag is pushed it has nothing to install.
+- **The tag check covers `pyproject.toml` too**, so the two versions cannot drift.
+- **Release notes are the commit subjects since the previous tag** (`git log
+  --no-merges`), with no `CHANGELOG.md`: the commit messages already say why, and a
+  changelog would be a second copy to keep in step.
+- **Dev tools pinned:** `pytest-homeassistant-custom-component==0.13.373` (HA 2026.10.2)
+  and `ty==0.0.89`, so CI tests the HA every checkout does. Actions are pinned by commit.
+- **Three HACS checks are skipped** (`ignore` in `ci.yml`): `license`, `topics` and
+  `brands`. They are repository settings and assets for the owner (a license, GitHub
+  topics, `custom_components/yarbie/brand/icon.png`), not code.
+- **Found on the way:** `test_heatmap.py` imported the top-level `yarbo_local`, which
+  only a dev venv with the library installed has; CI's clean install failed it. It uses
+  the vendored copy now.
 
 ## Appendix: delta against markus-lassfolk's integration (mower only)
 
