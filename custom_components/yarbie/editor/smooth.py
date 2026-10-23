@@ -21,7 +21,9 @@ from dataclasses import asdict, dataclass, field
 import math
 from typing import Any, Literal
 
+from .._vendor.yarbo_local.models import local_to_wgs84
 from .diff import CROSSING_SAME_M, crossings
+from .mapdoc import Ref, dock_point, feature_key, geometry_to_local, parse_ref, site_reference
 
 Pt = tuple[float, float]
 Direction = Literal["shrink", "grow"]
@@ -171,6 +173,10 @@ def smooth_ring(
             )
             return unchanged
         reverted += 1
+
+    tidy = _tidy(ring, ctx, {pts[i] for i in pins})
+    if len(tidy) < len(ring) and not _new_crossings(tidy, before_crossings):
+        ring = tidy
 
     result = _finish(original, pts, ring)
     result.arcs = sum(1 for p in pieces if p.arc)
@@ -511,6 +517,45 @@ def _run_ok(candidate: list[Pt], run: list[Pt], ctx: _Context, whole: bool = Fal
     return all(old.distance(p, limit) <= limit for p in _samples(candidate, ctx.tolerance))
 
 
+def _tidy(ring: list[Pt], ctx: _Context, fixed: set[Pt]) -> list[Pt]:
+    """Drop corners left close together where pieces meet (an arc's end beside a
+    straight edge's), where the outline passes the same checks without them."""
+    out = list(ring)
+    i = 0
+    while i < len(out) and len(out) > 4:
+        n = len(out)
+        u, v, w = out[i - 1], out[i], out[(i + 1) % n]
+        if v not in fixed and min(math.dist(u, v), math.dist(v, w)) <= ctx.tolerance:
+            nearby = [out[(i + k) % n] for k in range(-3, 4) if k != 0]
+            if _can_drop(u, v, w, nearby, ctx):
+                del out[i]
+                continue
+        i += 1
+    return out
+
+
+def _can_drop(u: Pt, v: Pt, w: Pt, nearby: list[Pt], ctx: _Context) -> bool:
+    """Whether ``u``-``w`` can stand in for ``u``-``v``-``w``. ``nearby`` is the outline
+    round ``v`` without it, for the original points that were closest to ``v``'s edges."""
+    limit = ctx.tolerance + SLACK_M
+    if ctx.edges.crosses(u, w):
+        return False
+    mid = ((u[0] + w[0]) / 2, (u[1] + w[1]) / 2)
+    if ctx.edges.distance(mid, SLACK_M) > SLACK_M and ctx.edges.contains(mid) != ctx.shrink:
+        return False
+    if any(ctx.edges.distance(p, limit) > limit for p in _samples([u, w], ctx.tolerance)):
+        return False
+    local = _Grid(nearby, closed=False)
+    reach = max(math.dist(u, v), math.dist(v, w)) + limit
+    for i in ctx.edges._near(v, v, reach):
+        p = ctx.edges.segments[i][0]
+        if math.dist(p, v) <= reach and min(
+            _segment_distance(p, u, w), local.distance(p, limit)
+        ) > limit:
+            return False
+    return True
+
+
 def _samples(line: Sequence[Pt], spacing: float) -> Iterable[Pt]:
     for a, b in zip(line, line[1:], strict=False):
         steps = max(1, math.ceil(math.dist(a, b) / spacing))
@@ -527,6 +572,93 @@ def _finish(original: list[Pt], cleaned: list[Pt], ring: list[Pt]) -> Smoothed:
     grid = _Grid(ring, closed=True)
     offset = max(grid.distance(p, math.inf) for p in original)
     return Smoothed(ring, len(original), len(ring), area_before, area_after, round(offset, 3))
+
+
+# -- the editor's features
+
+
+def smooth_features(
+    raw: Mapping[str, Any],
+    reference: Ref | None,
+    edited: Mapping[str, Any],
+    ids: Iterable[str],
+    tolerance: float,
+    *,
+    arcs: bool = True,
+    keep_shared: bool = True,
+) -> list[dict[str, Any]]:
+    """Smoothed outlines for the editor's features ``ids`` (GeoJSON, as edited).
+
+    Each is worked on in its zone's own frame, as ``diff`` does. Pathway ends (as edited)
+    and the dock are kept; with ``keep_shared``, so are edges shared with other areas."""
+    site_ref = site_reference(raw, reference)
+    records = {
+        feature_key(family, r.get("id")): r
+        for family in DIRECTION
+        for r in raw.get(family) or []
+        if isinstance(r, Mapping)
+    }
+    features = [
+        f for f in edited.get("features") or []
+        if isinstance(f, Mapping) and isinstance(f.get("geometry"), Mapping)
+    ]
+    by_id = {str(f.get("id")): f for f in features}
+    frames: dict[Ref, tuple[list[Pt], list[tuple[str, list[Pt]]]]] = {}
+
+    def frame(ref: Ref) -> tuple[list[Pt], list[tuple[str, list[Pt]]]]:
+        """Points to keep and area outlines in ``ref``'s metres (a site has one ref, usually)."""
+        if ref not in frames:
+            keep: list[Pt] = []
+            areas: list[tuple[str, list[Pt]]] = []
+            for f in features:
+                family = (f.get("properties") or {}).get("family")
+                kind = f["geometry"].get("type")
+                if family in ("pathways", "sidewalks") and kind == "LineString":
+                    line = geometry_to_local(f["geometry"], ref)
+                    keep += [line[0], line[-1]] if line else []
+                elif family == "areas" and kind == "Polygon":
+                    areas.append((str(f.get("id")), geometry_to_local(f["geometry"], ref)))
+            if (dock := dock_point(raw)) is not None and site_ref is not None:
+                lat, lon = local_to_wgs84(site_ref, *dock)
+                keep += geometry_to_local({"type": "LineString", "coordinates": [[lon, lat]]}, ref)
+            frames[ref] = (keep, areas)
+        return frames[ref]
+
+    out: list[dict[str, Any]] = []
+    for key in ids:
+        feature = by_id.get(key)
+        if feature is None:
+            raise LookupError(f"no feature {key}")
+        family = str((feature.get("properties") or {}).get("family"))
+        if family not in DIRECTION or feature["geometry"].get("type") != "Polygon":
+            raise ValueError(f"{key} is not an area or no-go zone")
+        ref = parse_ref((records.get(key) or {}).get("ref")) or site_ref
+        if ref is None:
+            raise ValueError("the robot has no GPS reference, so shapes cannot be measured")
+        keep, areas = frame(ref)
+        shared = family == "areas" and keep_shared
+        result = smooth_feature(
+            family,
+            geometry_to_local(feature["geometry"], ref),
+            tolerance,
+            arcs=arcs,
+            keep=keep if family == "areas" else (),
+            neighbours=[ring for k, ring in areas if k != key] if shared else (),
+        )
+        ring = [_lonlat(ref, x, y) for x, y in result.points]
+        out.append(
+            {
+                "id": key,
+                "geometry": {"type": "Polygon", "coordinates": [[*ring, ring[0]]]},
+                "stats": result.public(),
+            }
+        )
+    return out
+
+
+def _lonlat(ref: Ref, x: float, y: float) -> list[float]:
+    lat, lon = local_to_wgs84(ref, x, y)
+    return [round(lon, 9), round(lat, 9)]
 
 
 # -- small geometry
@@ -588,7 +720,10 @@ def _orient(a: Pt, b: Pt, c: Pt) -> float:
 
 
 def _properly_cross(p1: Pt, p2: Pt, q1: Pt, q2: Pt) -> bool:
-    """Whether two segments cross at a point inside both (touching does not count)."""
+    """Whether two segments cross at a point inside both (touching does not count).
+
+    No slack here: an edge that grazes two corners can dip outside between them, so even
+    a millimetre's crossing is a crossing."""
     eps = 1e-9
 
     def sign(v: float) -> int:

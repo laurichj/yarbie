@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import random
 from typing import Any
 
 import pytest
@@ -27,6 +29,47 @@ async def test_info_and_map(ws: WS) -> None:
     assert body["reference"] == list(demo.REFERENCE)
     families = {f["properties"]["family"] for f in body["features"]["features"]}
     assert {"areas", "nogozones", "pathways", "dock"} <= families
+
+
+def _densify(ring: list[list[float]], step_m: float = 0.35, wobble_m: float = 0.02) -> list[list[float]]:
+    """A ring as the robot would drive it: a point every ``step_m``, wobbling a little."""
+    lat = ring[0][1]
+    per_m = (1 / (111_320 * math.cos(math.radians(lat))), 1 / 111_320)
+    rng = random.Random(3)
+    out: list[list[float]] = []
+    for (x1, y1), (x2, y2) in zip(ring, ring[1:], strict=False):
+        length = math.hypot((x2 - x1) / per_m[0], (y2 - y1) / per_m[1])
+        steps = max(1, round(length / step_m))
+        for k in range(steps):
+            t = k / steps
+            wx, wy = rng.uniform(-wobble_m, wobble_m), rng.uniform(-wobble_m, wobble_m)
+            out.append([round(x1 + t * (x2 - x1) + wx * per_m[0], 9), round(y1 + t * (y2 - y1) + wy * per_m[1], 9)])
+    return [*out, out[0]]
+
+
+async def test_smooth_proposes_without_sending(ws: WS) -> None:
+    info = (await ws("yarbie/info"))["result"]
+    assert info["smoothing"] == {"tolerance_m": 0.1524, "unit": "cm", "unit_m": 0.01}
+    body = await _map(ws)
+    fc = body["features"]
+    area = next(f for f in fc["features"] if f["properties"]["family"] == "areas")
+    area["geometry"]["coordinates"] = [_densify(area["geometry"]["coordinates"][0])]
+    before = len(area["geometry"]["coordinates"][0])
+
+    reply = await ws("yarbie/smooth", features=fc, ids=[area["id"]])
+    assert reply["success"], reply
+    (result,) = reply["result"]["results"]
+    assert result["id"] == area["id"]
+    assert len(result["geometry"]["coordinates"][0]) < before / 4
+    stats = result["stats"]
+    assert stats["area_after"] <= stats["area_before"]
+    assert stats["max_offset"] <= 0.1524 + 0.002
+    # Nothing went to the robot.
+    assert (await _map(ws))["revision"] == body["revision"]
+
+    pathway = next(f for f in fc["features"] if f["properties"]["family"] == "pathways")
+    reply = await ws("yarbie/smooth", features=fc, ids=[pathway["id"]])
+    assert not reply["success"] and reply["error"]["code"] == "invalid"
 
 
 async def test_create_edit_delete_nogozone(

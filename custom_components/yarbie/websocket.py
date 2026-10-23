@@ -114,6 +114,7 @@ async def ws_info(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
             "battery": state.battery,
             "position": position,
             "map_stale": c.map_stale,
+            "smoothing": c.smoothing,
         },
     )
 
@@ -131,6 +132,28 @@ async def ws_preview(hass: HomeAssistant, connection: websocket_api.ActiveConnec
     c = _coordinator(hass, msg)
     ops = await c.service.preview(msg["features"])
     connection.send_result(msg["id"], {"ops": [op.public() for op in ops], "writable": c.writable})
+
+
+@_command(
+    {
+        probatio.Required("type"): "yarbie/smooth",
+        probatio.Required("features"): dict,
+        probatio.Required("ids"): [str],
+        probatio.Optional("tolerance_m"): probatio.All(
+            probatio.Coerce(float), probatio.Range(min=0.005, max=1.0)
+        ),
+        probatio.Optional("arcs", default=True): bool,
+        probatio.Optional("keep_shared", default=True): bool,
+    }
+)
+async def ws_smooth(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Proposed outlines with fewer points; the panel shows them as edits to review."""
+    c = _coordinator(hass, msg)
+    tolerance = msg.get("tolerance_m", c.smoothing["tolerance_m"])
+    results = await c.service.smooth(
+        msg["features"], msg["ids"], tolerance, arcs=msg["arcs"], keep_shared=msg["keep_shared"]
+    )
+    connection.send_result(msg["id"], {"tolerance_m": tolerance, "results": results})
 
 
 @_command(
@@ -386,7 +409,7 @@ def ws_job_subscribe(
 
 
 COMMANDS = (
-    ws_info, ws_map, ws_preview, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
+    ws_info, ws_map, ws_preview, ws_smooth, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
     ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_area_params,
     ws_area_params_save, ws_runs, ws_run, ws_route_start, ws_job_get, ws_job_subscribe,
 )

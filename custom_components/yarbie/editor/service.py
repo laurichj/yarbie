@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from . import diff, heatmap, mapdoc
+from . import diff, heatmap, mapdoc, smooth
 from .backups import BackupStore
 
 if TYPE_CHECKING:
@@ -79,6 +79,23 @@ class MapService:
     async def preview(self, edited: dict[str, Any]) -> list[diff.Op]:
         view = await self.load()
         return diff.compute(view.raw, view.reference, edited)
+
+    async def smooth(
+        self, edited: dict[str, Any], ids: list[str], tolerance: float, *, arcs: bool, keep_shared: bool
+    ) -> list[dict[str, Any]]:
+        """Proposed outlines only: nothing is sent. The map last read will do for the
+        references and the dock, so this does not ask the robot again."""
+        view = self.last or await self.load()
+        return await asyncio.to_thread(
+            smooth.smooth_features,
+            view.raw,
+            view.reference,
+            edited,
+            ids,
+            tolerance,
+            arcs=arcs,
+            keep_shared=keep_shared,
+        )
 
     async def apply(self, edited: dict[str, Any], revision: str, actor: str | None) -> dict[str, Any]:
         self._check_writes()

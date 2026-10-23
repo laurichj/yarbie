@@ -16,6 +16,11 @@ OPT_OBSERVE_ONLY = "observe_only"
 OPT_KEEP_AWAKE = "keep_awake"
 OPT_GOOGLE_MAPS_KEY = "google_maps_key"
 OPT_RUN_RETENTION_DAYS = "run_retention_days"
+# Stored in metres; the options form shows it in inches or centimetres under one of these.
+OPT_SMOOTHING_TOLERANCE_M = "smoothing_tolerance_m"
+OPT_SMOOTHING_TOLERANCE = {"in": "smoothing_tolerance_in", "cm": "smoothing_tolerance_cm"}
+# What the form accepts, in its own unit.
+SMOOTHING_LIMITS = {"in": (0.5, 36.0), "cm": (1.0, 100.0)}
 
 # Typed as a host in the config flow, this runs the built-in simulator (development).
 SIMULATOR_HOST = "simulator"
