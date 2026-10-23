@@ -1,11 +1,9 @@
-import "maplibre-gl/dist/maplibre-gl.css";
-import "./style.css";
 
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 // Bundle MapLibre's worker (it renders GeoJSON) so it is served with the app.
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-import { api, ApiError, type Family, type Heatmap, type Imagery, type Progress, type MapFeature, type MapResponse, type Op, type Plan, type Status } from "./api";
+import { api, ApiError, type Family, type Heatmap, type Imagery, type Progress, type MapFeature, type MapResponse, type Op, type Plan, type Run, type Status } from "./api";
 import { COLORS, Editor, EDITABLE, type Tool } from "./editor";
 import { debugLog, installDebug } from "./debug";
 import { settingsForm, trackChanges } from "./areaSettings";
@@ -65,6 +63,9 @@ let status: Status | null = null;
 let ops: Op[] = [];
 let plans: Plan[] = [];
 let shownRoute: number | null = null;
+// Per plan: what its route preview is doing, shown in its row.
+const routeStatus = new Map<number, { kind: "computing" | "ok" | "error"; text: string; since: number }>();
+let routeTicker: number | undefined;
 let selectedId: string | null = null;
 let armedApply = false;
 let offsetMetres: [number, number] = loadOffset(imagery);
@@ -118,6 +119,7 @@ map.on("load", async () => {
   map.addSource("problems", { type: "geojson", data: empty });
   map.addSource("heat", { type: "geojson", data: empty });
   map.addSource("run", { type: "geojson", data: empty });
+  map.addSource("past-run", { type: "geojson", data: empty });
   // One square per grid cell, coloured by rank (t, 0 to 1): a blurred heatmap of a dense
   // grid averages itself into one flat colour.
   map.addLayer({
@@ -245,8 +247,21 @@ map.on("load", async () => {
   picker.addEventListener("change", () => setImagery(picker.value));
   wireControls();
   await reload(true);
+  map.addLayer({
+    id: "past-run-fill",
+    type: "fill",
+    source: "past-run",
+    paint: { "fill-color": ["match", ["get", "state"], "done", "#3fb950", "edge", "#d29922", "#f85149"], "fill-opacity": 0.35 },
+  });
+  map.addLayer({
+    id: "past-run-line",
+    type: "line",
+    source: "past-run",
+    paint: { "line-color": ["match", ["get", "state"], "done", "#3fb950", "edge", "#d29922", "#f85149"], "line-width": 3 },
+  });
   await refreshPlans();
   await refreshHistory();
+  await refreshRuns(false);
   pollStatus();
 });
 
@@ -533,10 +548,12 @@ function updateApplyButton() {
   button.className = armedApply ? "confirm" : "primary";
   const hint = $("apply-hint");
   if (!writable) {
-    hint.textContent =
-      status?.source === "cloud"
-        ? "Read-only: the cloud source cannot change the robot. Export your edits, or run yarbie on the robot's network."
-        : "Not connected to the robot.";
+    // The integration says why (untested firmware, observe only, writes turned off).
+    hint.textContent = !status?.connected
+      ? "Not connected to the robot."
+      : status.error
+        ? `Read-only: ${status.error}.`
+        : "Read-only.";
   } else if (status?.busy) {
     hint.textContent = "The robot is in a plan. Stop or finish it before changing the map.";
   } else if (ops.length > sendable) {
@@ -577,6 +594,15 @@ async function apply() {
       say(`Sent ${result.applied.length} change(s) to the robot.`, "ok");
     }
     if (result.backup) offerUndoApply(result.backup);
+    if (result.reload) {
+      // What was sent is on the robot; what the editor holds is not the robot's map now.
+      say(`Sent ${result.applied.length} change(s), but ${result.reload}.`, "error");
+      try {
+        await reload(false);
+      } catch {
+        // the message above already says to reload
+      }
+    }
     await refreshHistory();
   } catch (err) {
     say(message(err), "error");
@@ -599,6 +625,7 @@ function setRunActive(active: boolean) {
   runActive = active;
   $("run-section").hidden = !active;
   void refreshRun();
+  void refreshPlans(); // Route is off while a plan runs
 }
 
 async function refreshRun() {
@@ -962,6 +989,139 @@ async function renderParams(areaId: number) {
   });
 }
 
+// -- runs: the robot's history, with what yarbie saw happen
+
+let runs: Run[] = [];
+let shownRun: string | null = null;
+
+const OUTCOMES: Record<string, string> = {
+  completed: "Completed",
+  partial: "Ended early",
+  returned_to_dock: "Sent home",
+  stopped: "Stopped",
+  superseded: "Replaced",
+  running: "Running",
+  unknown: "Unknown end",
+};
+
+function when(t: number | null | undefined): string {
+  if (!t) return "";
+  return new Date(t * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function minutes(s: number | null | undefined): string {
+  if (s == null) return "";
+  const m = Math.round(s / 60);
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+}
+
+async function refreshRuns(refresh: boolean) {
+  const select = $("runs-plan") as HTMLSelectElement;
+  const planId = select.value ? Number(select.value) : undefined;
+  let got: Awaited<ReturnType<typeof api.runs>>;
+  try {
+    got = await api.runs(refresh, planId);
+  } catch (err) {
+    $("runs").innerHTML = `<li class="meta">${esc(message(err))}</li>`;
+    return;
+  }
+  runs = got.runs;
+  const chosen = select.value;
+  select.innerHTML =
+    `<option value="">All plans</option>` +
+    got.plans.map((p) => `<option value="${p.id}" ${String(p.id) === chosen ? "selected" : ""}>${esc(p.name)}</option>`).join("");
+  $("runs").innerHTML = runs.length
+    ? runs
+        .map((r) => {
+          const facts = [
+            r.work_s != null ? minutes(r.work_s) : "",
+            r.progress != null ? `${r.progress}%` : "",
+            r.charge_trips ? `${r.charge_trips} charge${r.charge_trips === 1 ? "" : "s"}` : "",
+            r.battery_used != null ? `${r.battery_used}% battery` : "",
+          ].filter(Boolean);
+          return `<li data-run="${esc(r.key)}" class="${shownRun === r.key ? "showing" : ""}">
+            <div><b>${esc(when(r.started))}</b> <span class="outcome ${esc(r.outcome)}">${esc(OUTCOMES[r.outcome] ?? r.outcome)}</span>
+              <div class="meta">${esc(r.plan ?? "Unknown plan")}${facts.length ? " · " + esc(facts.join(" · ")) : ""}</div></div>
+            <button data-show-run="${esc(r.key)}">${shownRun === r.key ? "Hide" : "Show"}</button>
+          </li>`;
+        })
+        .join("")
+    : `<li class="meta">No runs yet.</li>`;
+  $("runs").querySelectorAll<HTMLButtonElement>("button[data-show-run]").forEach((b) =>
+    b.addEventListener("click", () => toggleRun(b.dataset.showRun!)),
+  );
+}
+
+async function toggleRun(key: string) {
+  if (shownRun === key) {
+    shownRun = null;
+    $("run-detail").hidden = true;
+    (map.getSource("past-run") as GeoJSONSource).setData(empty);
+  } else {
+    try {
+      showRun(await api.run(key));
+    } catch (err) {
+      say(`Cannot show that run: ${message(err)}`, "error");
+      return;
+    }
+  }
+  await refreshRuns(false);
+}
+
+function showRun(run: Run) {
+  shownRun = run.key;
+  // The run's areas on today's map, shaded by what the robot finished.
+  const states = run.area_states ?? {};
+  const offset = currentOffset();
+  const areas = (loaded?.features.features ?? []).filter(
+    (f) => f.properties.family === "areas" && f.properties.id !== null && String(f.properties.id) in states,
+  );
+  const features = areas.map((f) => ({
+    type: "Feature" as const,
+    geometry: shiftGeometry(f.geometry, offset),
+    properties: { state: states[String(f.properties.id)] },
+  }));
+  (map.getSource("past-run") as GeoJSONSource).setData({ type: "FeatureCollection", features });
+  const box = bounds(features);
+  if (box) map.fitBounds(box, { padding: 80, maxZoom: 21 });
+
+  const lines: string[] = [];
+  lines.push(`<div class="meta">${esc(run.plan ?? "Unknown plan")}, started ${esc(when(run.started))}${run.started_by ? ` by ${esc(run.started_by)}` : ""}.</div>`);
+  if (run.mowed_m2 != null && run.total_m2) {
+    lines.push(`<div class="meta">Mowed ${Math.round(run.mowed_m2)} of ${Math.round(run.total_m2)} m²${run.rain ? "; rain was detected" : ""}.</div>`);
+  }
+  const timeline: [number, string][] = [];
+  for (const s of run.segments ?? []) {
+    const battery = s.battery_start != null && s.battery_end != null ? ` (battery ${s.battery_start}% → ${s.battery_end}%)` : "";
+    timeline.push([s.start, `Working${battery}`]);
+    if (s.end) timeline.push([s.end, "Back to the dock"]);
+  }
+  for (const e of run.events ?? []) {
+    const what = {
+      plan_started: "Started",
+      plan_paused: `Paused${e.reason ? `: ${e.reason}` : ""}${e.fault ? ` (${e.fault})` : e.fault_code ? ` (code ${e.fault_code})` : ""}`,
+      plan_resumed: "Resumed",
+      plan_finished: `Finished${e.reason ? `: ${e.reason.replaceAll("_", " ")}` : ""}${e.progress != null ? ` at ${Math.round(e.progress)}%` : ""}`,
+    }[e.kind] ?? e.kind;
+    timeline.push([e.at, what]);
+  }
+  timeline.sort((a, b) => a[0] - b[0]);
+  if (timeline.length) {
+    lines.push(
+      `<ul class="timeline">${timeline
+        .map(([t, what]) => `<li><span>${esc(new Date(t * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }))}</span> ${esc(what)}</li>`)
+        .join("")}</ul>`,
+    );
+  }
+  if (!run.source.includes("yarbie")) {
+    lines.push(`<p class="hint">From the robot's own record only: yarbie was not watching this run, so it cannot say why it ended.</p>`);
+  }
+  lines.push(`<p class="hint">Green: finished. Amber: only the edge pass was finished. Red: not finished. Shown on today&apos;s map.</p>`);
+  const box2 = $("run-detail");
+  box2.innerHTML = lines.join("");
+  box2.hidden = false;
+}
+
 // -- plans
 
 async function refreshPlans() {
@@ -978,9 +1138,9 @@ async function refreshPlans() {
     ? plans
         .map(
           (p) => `<li data-plan="${p.id}" class="${shownRoute === p.id ? "showing" : ""}">
-            <div><b>${esc(p.name)}</b><div class="meta">${p.area_ids.map((a) => esc(areaName(a))).join(", ")}</div></div>
+            <div><b>${esc(p.name)}</b><div class="meta">${p.area_ids.map((a) => esc(areaName(a))).join(", ")}</div>${routeLine(p.id)}</div>
             <span class="row" style="margin:0">
-              <button data-route="${p.id}" title="Show the route the robot would take">${shownRoute === p.id ? "Hide" : "Route"}</button>
+              <button data-route="${p.id}" title="${status?.busy && shownRoute !== p.id ? "Not while a plan runs or is paused" : "Show the route the robot would take"}" ${routeStatus.get(p.id)?.kind === "computing" || (status?.busy && shownRoute !== p.id) ? "disabled" : ""}>${routeButton(p.id)}</button>
               <button data-edit="${p.id}">Edit</button>
             </span>
           </li>`,
@@ -995,9 +1155,37 @@ async function refreshPlans() {
   );
 }
 
+function routeButton(planId: number): string {
+  if (routeStatus.get(planId)?.kind === "computing") return "Computing…";
+  return shownRoute === planId ? "Hide" : "Route";
+}
+
+function routeLine(planId: number): string {
+  const status = routeStatus.get(planId);
+  if (!status) return "";
+  let text = status.text;
+  if (status.kind === "computing") text += ` (${Math.round((Date.now() - status.since) / 1000)} s)`;
+  return `<div class="route-status ${status.kind}" data-route-status="${planId}">${esc(text)}</div>`;
+}
+
+/** Keep the elapsed time on a computing row ticking without redrawing the list. */
+function tickRouteStatus() {
+  const computing = [...routeStatus].filter(([, s]) => s.kind === "computing");
+  for (const [planId] of computing) {
+    const line = $("plans").querySelector<HTMLElement>(`[data-route-status="${planId}"]`);
+    if (line) line.outerHTML = routeLine(planId);
+  }
+  if (!computing.length) {
+    window.clearInterval(routeTicker);
+    routeTicker = undefined;
+  }
+}
+
 async function toggleRoute(planId: number) {
+  if (routeStatus.get(planId)?.kind === "computing") return;
   if (shownRoute === planId) {
     shownRoute = null;
+    routeStatus.delete(planId);
     (map.getSource("route") as GeoJSONSource).setData(empty);
   } else {
     await showRoute(planId);
@@ -1006,17 +1194,35 @@ async function toggleRoute(planId: number) {
 }
 
 async function showRoute(planId: number) {
+  routeStatus.set(planId, {
+    kind: "computing",
+    text: "The robot is working out the route; a big yard can take a minute or more.",
+    since: Date.now(),
+  });
+  routeTicker ??= window.setInterval(tickRouteStatus, 1000);
+  await refreshPlans();
   try {
     const route = await api.route(planId);
+    if (!route.features.length) {
+      routeStatus.set(planId, { kind: "error", text: "The robot returned no route for this plan.", since: Date.now() });
+      return;
+    }
     const offset = currentOffset();
+    const features = route.features.map((f) => ({ ...f, geometry: shiftGeometry(f.geometry, offset) }));
+    if (shownRoute !== null && shownRoute !== planId) routeStatus.delete(shownRoute);
     shownRoute = planId;
-    (map.getSource("route") as GeoJSONSource).setData({
-      type: "FeatureCollection",
-      features: route.features.map((f) => ({ ...f, geometry: shiftGeometry(f.geometry, offset) })),
+    (map.getSource("route") as GeoJSONSource).setData({ type: "FeatureCollection", features });
+    const box = bounds(features);
+    if (box) map.fitBounds(box, { padding: 80, maxZoom: 21 });
+    const minutes = route.total_s ? `about ${Math.round(route.total_s / 60)} min` : "no time estimate";
+    const passes = new Set(route.features.map((f) => `${f.properties.area_id}`)).size;
+    routeStatus.set(planId, {
+      kind: "ok",
+      text: `Route shown: ${passes} area${passes === 1 ? "" : "s"}, ${minutes}. Dashed blue is the edge lap.`,
+      since: Date.now(),
     });
-    if (route.total_s) say(`Estimated time: ${Math.round(route.total_s / 60)} min.`, "ok");
   } catch (err) {
-    say(`No route: ${message(err)}`, "error");
+    routeStatus.set(planId, { kind: "error", text: `No route: ${message(err)}`, since: Date.now() });
   }
 }
 
@@ -1168,6 +1374,8 @@ function labelPoint(f: MapFeature): GeoJSON.Position {
 }
 
 function wireControls() {
+  $("runs-plan").addEventListener("change", () => void refreshRuns(false));
+  $("runs-refresh").addEventListener("click", () => void refreshRuns(true));
   const toolButtons = $("tools").querySelectorAll<HTMLButtonElement>("button[data-tool]");
   const setTool = (tool: Tool) => {
     editor.setTool(tool);

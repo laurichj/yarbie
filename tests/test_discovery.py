@@ -73,7 +73,29 @@ def test_nothing_found(net: Network, tmp_path: Path) -> None:
         locate(None, tmp_path / "c.json")
 
 
-def test_local_subnets_are_private_slash_24s() -> None:
+def test_local_subnets_are_private_slash_24s(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The /24 around the address the machine would send from. A fake socket stands in:
+    the HA test plugin blocks connecting anywhere but 127.0.0.1."""
+
+    class FakeSocket:
+        def __init__(self, *args: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeSocket:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def connect(self, address: tuple[str, int]) -> None:
+            pass
+
+        def getsockname(self) -> tuple[str, int]:
+            return ("192.168.1.23", 50000)
+
+    monkeypatch.setattr(discovery.socket, "socket", FakeSocket)
+    monkeypatch.setattr(discovery, "in_container", lambda: False)
+    assert discovery.local_subnets() == ["192.168.1.0/24"]
     for subnet in discovery.local_subnets():
         net = ipaddress.ip_network(subnet)
         assert net.prefixlen == 24 and net.is_private

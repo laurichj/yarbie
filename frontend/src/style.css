@@ -145,6 +145,10 @@ i.sw.dock { background: #fff; border-radius: 50%; }
 .plans li { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .plans li.showing { border-color: var(--accent); }
 .plans .meta { color: var(--muted); font-size: 12px; }
+.plans .route-status { font-size: 12px; margin-top: 4px; }
+.plans .route-status.computing { color: var(--warn); }
+.plans .route-status.ok { color: var(--ok); }
+.plans .route-status.error { color: var(--danger); }
 
 label.field { display: grid; gap: 3px; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
 label.check { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
@@ -191,3 +195,12 @@ summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   #app { flex-direction: column-reverse; }
   #panel { width: 100%; height: 45vh; border-right: 0; border-top: 1px solid var(--line); }
 }
+
+.runs .outcome { font-size: 11px; padding: 1px 6px; border-radius: 9px; margin-left: 4px; background: var(--line); color: var(--muted); }
+.runs .outcome.completed { background: rgba(63, 185, 80, 0.18); color: var(--ok); }
+.runs .outcome.partial, .runs .outcome.stopped, .runs .outcome.returned_to_dock { background: rgba(210, 153, 34, 0.18); color: var(--warn); }
+.runs .outcome.unknown, .runs .outcome.superseded { background: rgba(248, 81, 73, 0.15); color: var(--danger); }
+#run-detail { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.timeline { list-style: none; margin: 6px 0; padding: 0; font-size: 12px; }
+.timeline li { padding: 2px 0; }
+.timeline span { color: var(--muted); display: inline-block; min-width: 46px; }
