@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from custom_components.yarbie._vendor.yarbo_local.models import local_to_wgs84
 from custom_components.yarbie.editor import demo, heatmap
 
 
@@ -20,9 +21,7 @@ def run(areas: list[int], *, segments: int = 1, laps: int = 2, start: int = 1_70
 
 
 def cell_at(result: dict[str, Any], x: float, y: float) -> float:
-    lat, lon = __import__("yarbo_local.models", fromlist=["local_to_wgs84"]).local_to_wgs84(
-        demo.REFERENCE, x, y
-    )
+    lat, lon = local_to_wgs84(demo.REFERENCE, x, y)
     best = min(result["cells"], key=lambda c: (c[0] - lon) ** 2 + (c[1] - lat) ** 2)
     return best[2]
 
