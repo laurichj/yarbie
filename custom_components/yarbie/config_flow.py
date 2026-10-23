@@ -27,10 +27,14 @@ from .const import (
     OPT_KEEP_AWAKE,
     OPT_OBSERVE_ONLY,
     OPT_RUN_RETENTION_DAYS,
+    OPT_SMOOTHING_TOLERANCE,
+    OPT_SMOOTHING_TOLERANCE_M,
     SIMULATOR_HOST,
+    SMOOTHING_LIMITS,
 )
-from .editor import demo
+from .editor import demo, smooth
 from .runlog import DEFAULT_RETENTION_DAYS
+from .units import short_length
 
 
 class YarbieConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -126,9 +130,16 @@ class YarbieConfigFlow(ConfigFlow, domain=DOMAIN):
 
 class YarbieOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        unit, unit_m = short_length(self.hass)
+        tolerance_key = OPT_SMOOTHING_TOLERANCE[unit]
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            data = dict(user_input)
+            if tolerance_key in data:
+                data[OPT_SMOOTHING_TOLERANCE_M] = round(float(data.pop(tolerance_key)) * unit_m, 4)
+            return self.async_create_entry(data=data)
         options = self.config_entry.options
+        tolerance = float(options.get(OPT_SMOOTHING_TOLERANCE_M, smooth.DEFAULT_TOLERANCE_M))
+        low, high = SMOOTHING_LIMITS[unit]
         return self.async_show_form(
             step_id="init",
             data_schema=probatio.Schema(
@@ -148,6 +159,9 @@ class YarbieOptionsFlow(OptionsFlowWithReload):
                         OPT_RUN_RETENTION_DAYS,
                         default=options.get(OPT_RUN_RETENTION_DAYS, DEFAULT_RETENTION_DAYS),
                     ): probatio.All(probatio.Coerce(int), probatio.Range(min=7, max=3650)),
+                    probatio.Optional(tolerance_key, default=round(tolerance / unit_m, 1)): probatio.All(
+                        probatio.Coerce(float), probatio.Range(min=low, max=high)
+                    ),
                 }
             ),
         )

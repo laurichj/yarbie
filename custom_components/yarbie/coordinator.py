@@ -32,17 +32,19 @@ from .const import (
     OPT_KEEP_AWAKE,
     OPT_OBSERVE_ONLY,
     OPT_RUN_RETENTION_DAYS,
+    OPT_SMOOTHING_TOLERANCE_M,
     PLANS_INTERVAL_S,
     PUSH_INTERVAL_S,
     SIGNAL_PLAN_EVENT,
     STORAGE_VERSION,
 )
-from .editor import runs
+from .editor import runs, smooth
 from .editor.backups import BackupStore
 from .editor.service import MapService, ReadOnlyError
 from .jobs import Jobs
 from .robot import Robot
 from .runlog import DEFAULT_RETENTION_DAYS, RunLog, RunRecorder
+from .units import short_length
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,6 +124,13 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
     @property
     def options(self) -> dict[str, Any]:
         return dict(self.entry.options)
+
+    @property
+    def smoothing(self) -> dict[str, Any]:
+        """The smoothing tolerance (metres) and the unit the panel shows it in."""
+        unit, unit_m = short_length(self.hass)
+        tolerance = float(self.options.get(OPT_SMOOTHING_TOLERANCE_M, smooth.DEFAULT_TOLERANCE_M))
+        return {"tolerance_m": tolerance, "unit": unit, "unit_m": unit_m}
 
     @property
     def observe_only(self) -> bool:
