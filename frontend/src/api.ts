@@ -48,6 +48,31 @@ export interface Status {
   firmware?: string | null;
   position?: { lon: number; lat: number; phi: number } | null;
   error?: string;
+  smoothing?: Smoothing;
+}
+
+/** The smoothing tolerance from the integration options, and the unit to show it in
+ * (inches when Home Assistant uses US customary units, else centimetres). */
+export interface Smoothing {
+  tolerance_m: number;
+  unit: "in" | "cm";
+  unit_m: number;
+}
+
+export interface Smoothed {
+  id: string;
+  geometry: GeoJSON.Polygon;
+  stats: {
+    before: number;
+    after: number;
+    area_before: number;
+    area_after: number;
+    max_offset: number;
+    arcs: number;
+    circle: boolean;
+    pinned: number;
+    notes: string[];
+  };
 }
 
 export interface Op {
@@ -243,6 +268,7 @@ interface Info {
   activity: string | null;
   battery: number | null;
   position: Status["position"];
+  smoothing: Smoothing;
 }
 
 export const api = {
@@ -258,11 +284,16 @@ export const api = {
       firmware: info.firmware,
       position: info.position,
       error: info.read_only_reason ?? undefined,
+      smoothing: info.smoothing,
     };
   },
   map: () => call<MapResponse>("map"),
   preview: (features: MapCollection) =>
     call<{ ops: Op[]; writable: boolean }>("preview", { features }),
+  /** Proposed outlines for ``ids``, worked out from the whole edited map (pathway ends and
+   * neighbouring areas are kept). Nothing is sent to the robot. */
+  smooth: (features: MapCollection, ids: string[], tolerance_m: number, arcs: boolean, keep_shared: boolean) =>
+    call<{ tolerance_m: number; results: Smoothed[] }>("smooth", { features, ids, tolerance_m, arcs, keep_shared }),
   apply: (features: MapCollection, revision: string) =>
     call<ApplyResult>("apply", { features, revision }),
   imagery: () => call<{ sources: Imagery[]; error?: string; hint?: string }>("imagery"),

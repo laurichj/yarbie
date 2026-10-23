@@ -1,4 +1,4 @@
-import { n as e, t } from "./api-DIcaCA5o.js";
+import { n as e, t } from "./api-BDbu3e6f.js";
 //#region node_modules/maplibre-gl/dist/maplibre-gl.mjs
 var n = Object.create, r = Object.defineProperty, i = Object.getOwnPropertyDescriptor, a = Object.getOwnPropertyNames, o = Object.getPrototypeOf, s = Object.prototype.hasOwnProperty, c = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t.exports), l = (e, t, n, o) => {
 	if (t && typeof t == "object" || typeof t == "function") for (var c = a(t), l = 0, u = c.length, d; l < u; l++) d = c[l], !s.call(e, d) && d !== n && r(e, d, {
@@ -40442,6 +40442,14 @@ var dR = (e) => lR[uR(e)], fR = class {
 		let n = this.all.find((t) => t.id === e);
 		n && (n.geometry = t, this.draw.hasFeature(e) && this.draw.updateFeatureGeometry(e, rR(t, this.offset)), this.checkpoint());
 	}
+	setGeometries(e) {
+		this.sync();
+		for (let [t, n] of e) {
+			let e = this.all.find((e) => e.id === t);
+			e && (e.geometry = n, this.draw.hasFeature(t) && this.draw.updateFeatureGeometry(t, rR(n, this.offset)));
+		}
+		this.checkpoint();
+	}
 	select(e) {
 		this.draw.setMode("select"), this.draw.hasFeature(e) && this.draw.selectFeature(e);
 	}
@@ -40737,21 +40745,70 @@ function TR(e, t) {
 	}));
 }
 //#endregion
+//#region src/smoothing.ts
+var ER = ["areas", "nogozones"], DR = {
+	tolerance_m: .1524,
+	unit: "in",
+	unit_m: .0254
+}, OR = 10.7639, kR = {
+	tolerance_m: null,
+	arcs: !0,
+	keepShared: !0
+};
+function AR(e) {
+	return kR.tolerance_m ?? e.tolerance_m;
+}
+function jR(e, t) {
+	return `${(e / t.unit_m).toFixed(1)} ${t.unit}`;
+}
+function MR(e, t) {
+	return t.unit === "in" ? `${Math.round(e * OR).toLocaleString()} ft²` : `${e >= 10 ? Math.round(e).toLocaleString() : e.toFixed(1)} m²`;
+}
+function NR(e, t, n) {
+	let { before: r, after: i, area_before: a, area_after: o, max_offset: s, arcs: c, circle: l, notes: u } = e.stats;
+	if (i >= r && !c) return ["Already as simple as this tolerance allows.", ...u].join(" ");
+	let d = Math.abs(o - a), f = [
+		`${r.toLocaleString()} → ${i.toLocaleString()} points`,
+		`${MR(d, n)} ${t === "areas" ? "smaller" : "larger"}`,
+		`moves at most ${jR(s, n)}`
+	];
+	return l ? f.push("a circle") : c && f.push(`${c} arc${c === 1 ? "" : "s"}`), [f.join(" · "), ...u].join(" ");
+}
+function PR(e) {
+	return e.stats.after !== e.stats.before || e.stats.arcs > 0;
+}
+function FR(e, t, n) {
+	let r = t.unit === "in" ? .5 : 1, [i, a] = t.unit === "in" ? [.5, 36] : [1, 100];
+	return `
+    <label class="field" style="margin-top:8px">How far a line may move (${t.unit})
+      <input type="number" id="${e}-tol" step="${r}" min="${i}" max="${a}"
+        value="${(AR(t) / t.unit_m).toFixed(1)}"/></label>
+    <label class="check"><input type="checkbox" id="${e}-arcs" ${kR.arcs ? "checked" : ""}/> Round curves</label>
+    ${n ? `<label class="check"><input type="checkbox" id="${e}-shared" ${kR.keepShared ? "checked" : ""}/> Keep edges shared with other areas</label>` : ""}`;
+}
+function IR(e, t) {
+	let n = document.getElementById(`${e}-tol`), r = Number(n.value);
+	if (!(r >= Number(n.min) && r <= Number(n.max))) return !1;
+	kR.tolerance_m = r * t.unit_m, kR.arcs = document.getElementById(`${e}-arcs`).checked;
+	let i = document.getElementById(`${e}-shared`);
+	return i && (kR.keepShared = i.checked), !0;
+}
+//#endregion
 //#region src/main.ts
-var ER = "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community", DR = [
+var LR = "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community", RR = [
 	{
 		id: "esri",
 		label: "Esri World Imagery",
 		tiles: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
 		maxzoom: 19,
-		attribution: ER
+		attribution: LR
 	},
 	{
 		id: "esri-clarity",
 		label: "Esri Clarity (other capture)",
 		tiles: "https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
 		maxzoom: 19,
-		attribution: ER
+		attribution: LR
 	},
 	{
 		id: "snoco-2024",
@@ -40766,34 +40823,34 @@ var ER = "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Commun
 			48.3
 		]
 	}
-], OR = [
+], zR = [
 	"google",
 	"snoco-2024",
 	"esri",
 	"esri-clarity"
-], kR = QR(), AR = kR ?? "esri", jR = [
+], BR = pz(), VR = BR ?? "esri", HR = [
 	"novisionzones",
 	"elec_fence",
 	"deadends",
 	"dock"
-], MR = [
+], UR = [
 	[0, "Rows"],
 	[4, "Rows, fewer turns"],
 	[1, "Spiral (contour)"]
-], NR = .25, Q = (e) => document.getElementById(e), PR = (e) => e.replace(/[&<>"']/g, (e) => ({
+], WR = .25, Q = (e) => document.getElementById(e), GR = (e) => e.replace(/[&<>"']/g, (e) => ({
 	"&": "&amp;",
 	"<": "&lt;",
 	">": "&gt;",
 	"\"": "&quot;",
 	"'": "&#39;"
-})[e]), FR = null, IR = null, LR = [], RR = [], zR = null, BR = /* @__PURE__ */ new Map(), VR, HR = null, UR = !1, WR = rz(AR);
+})[e]), KR = null, qR = null, JR = [], YR = [], XR = null, ZR = /* @__PURE__ */ new Map(), QR, $R = null, ez = !1, tz = vz(VR), nz = [], rz = /* @__PURE__ */ new Map(), iz = /* @__PURE__ */ new Set(), az = !1;
 $P(eF);
 var $ = new UP({
 	container: "map",
 	style: {
 		version: 8,
 		glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-		sources: Object.fromEntries(DR.map((e) => [e.id, {
+		sources: Object.fromEntries(RR.map((e) => [e.id, {
 			type: "raster",
 			tiles: [e.tiles],
 			tileSize: 256,
@@ -40801,11 +40858,11 @@ var $ = new UP({
 			attribution: e.attribution,
 			...e.covers ? { bounds: e.covers } : {}
 		}])),
-		layers: DR.map((e) => ({
+		layers: RR.map((e) => ({
 			id: `imagery-${e.id}`,
 			type: "raster",
 			source: e.id,
-			layout: { visibility: e.id === "esri" || e.id === AR ? "visible" : "none" }
+			layout: { visibility: e.id === "esri" || e.id === VR ? "visible" : "none" }
 		}))
 	},
 	center: [0, 20],
@@ -40813,35 +40870,38 @@ var $ = new UP({
 	maxZoom: 24
 });
 QL(Q("map")), $.addControl(new GP({ visualizePitch: !1 }), "top-right"), $.addControl(new JP({ unit: "metric" }), "bottom-right");
-var GR = {
+var oz = {
 	type: "FeatureCollection",
 	features: []
-}, KR;
+}, sz;
 $.on("load", async () => {
 	$.addSource("static", {
 		type: "geojson",
-		data: GR
+		data: oz
 	}), $.addSource("route", {
 		type: "geojson",
-		data: GR
+		data: oz
 	}), $.addSource("labels", {
 		type: "geojson",
-		data: GR
+		data: oz
 	}), $.addSource("robot", {
 		type: "geojson",
-		data: GR
+		data: oz
 	}), $.addSource("problems", {
 		type: "geojson",
-		data: GR
+		data: oz
+	}), $.addSource("smooth", {
+		type: "geojson",
+		data: oz
 	}), $.addSource("heat", {
 		type: "geojson",
-		data: GR
+		data: oz
 	}), $.addSource("run", {
 		type: "geojson",
-		data: GR
+		data: oz
 	}), $.addSource("past-run", {
 		type: "geojson",
-		data: GR
+		data: oz
 	}), $.addLayer({
 		id: "heat",
 		type: "fill",
@@ -40955,6 +41015,36 @@ $.on("load", async () => {
 			"circle-stroke-width": 3
 		}
 	}), $.addLayer({
+		id: "smooth-line",
+		type: "line",
+		source: "smooth",
+		filter: [
+			"==",
+			["geometry-type"],
+			"LineString"
+		],
+		paint: {
+			"line-color": "#f2cc60",
+			"line-width": 2.5,
+			"line-dasharray": [2, 1]
+		}
+	}), $.addLayer({
+		id: "smooth-points",
+		type: "circle",
+		source: "smooth",
+		filter: [
+			"==",
+			["geometry-type"],
+			"Point"
+		],
+		minzoom: 18,
+		paint: {
+			"circle-radius": 3,
+			"circle-color": "#f2cc60",
+			"circle-stroke-color": "#0d1117",
+			"circle-stroke-width": 1
+		}
+	}), $.addLayer({
 		id: "run-left",
 		type: "line",
 		source: "run",
@@ -41018,11 +41108,11 @@ $.on("load", async () => {
 			"text-halo-color": "#000000",
 			"text-halo-width": 1.5
 		}
-	}), KR = new fR($), KR.onChange(az), KR.onSelect((e) => {
-		HR = e, Oz();
-	}), Qz();
+	}), sz = new fR($), sz.onChange(bz), sz.onSelect((e) => {
+		$R = e, az || qz(), Uz();
+	}), CB();
 	let e = Q("imagery");
-	e.innerHTML = DR.map((e) => `<option value="${e.id}" ${e.id === AR ? "selected" : ""}>${PR(e.label)}</option>`).join(""), e.addEventListener("change", () => nz(e.value)), tB(), await qR(!0), $.addLayer({
+	e.innerHTML = RR.map((e) => `<option value="${e.id}" ${e.id === VR ? "selected" : ""}>${GR(e.label)}</option>`).join(""), e.addEventListener("change", () => _z(e.value)), EB(), await cz(!0), $.addLayer({
 		id: "past-run-fill",
 		type: "fill",
 		source: "past-run",
@@ -41054,23 +41144,23 @@ $.on("load", async () => {
 			],
 			"line-width": 3
 		}
-	}), await Uz(), await Tz(), await Bz(!1), Xz();
+	}), await mB(), await Bz(), await dB(!1), xB();
 });
-async function qR(t) {
+async function cz(t) {
 	try {
-		FR = await e.map();
+		KR = await e.map();
 	} catch (e) {
-		sB(`Could not read the map: ${oB(e)}`, "error");
+		MB(`Could not read the map: ${jB(e)}`, "error");
 		return;
 	}
-	KR.load(FR.features), await ez(), !kR && FR.reference && nz(tz(FR.reference), !1), ZR(), t && YR();
-	let n = KR.locked();
-	n.length ? sB(`Loaded ${FR.features.features.length} map objects. ${n.length} could not be opened for editing and are kept unchanged (dashed): ${n.map((e) => e.properties.name).join(", ")}.`, "error") : sB(`Loaded ${FR.features.features.length} map objects.`, "ok");
+	sz.load(KR.features), await hz(), !BR && KR.reference && _z(gz(KR.reference), !1), fz(), t && uz();
+	let n = sz.locked();
+	n.length ? MB(`Loaded ${KR.features.features.length} map objects. ${n.length} could not be opened for editing and are kept unchanged (dashed): ${n.map((e) => e.properties.name).join(", ")}.`, "error") : MB(`Loaded ${KR.features.features.length} map objects.`, "ok");
 }
-function JR() {
-	if (!FR) return [];
-	let e = XR(), t = KR.locked();
-	return [...FR.features.features, ...t].filter((e) => (jR.includes(e.properties.family) || t.includes(e)) && !Zz.has(e.properties.family)).map((t) => ({
+function lz() {
+	if (!KR) return [];
+	let e = dz(), t = sz.locked();
+	return [...KR.features.features, ...t].filter((e) => (HR.includes(e.properties.family) || t.includes(e)) && !SB.has(e.properties.family)).map((t) => ({
 		type: "Feature",
 		geometry: rR(t.geometry, e),
 		properties: {
@@ -41079,38 +41169,38 @@ function JR() {
 		}
 	}));
 }
-function YR() {
-	let e = FR && iR(FR.features.features);
+function uz() {
+	let e = KR && iR(KR.features.features);
 	e && $.fitBounds(e, {
 		padding: 60,
 		maxZoom: 21,
 		duration: 0
 	});
 }
-function XR() {
-	let e = FR?.reference?.[0] ?? 0;
-	return eR(WR[0], WR[1], e);
+function dz() {
+	let e = KR?.reference?.[0] ?? 0;
+	return eR(tz[0], tz[1], e);
 }
-function ZR() {
-	KR.setOffset(XR()), $.getSource("static").setData({
+function fz() {
+	sz.setOffset(dz()), $.getSource("static").setData({
 		type: "FeatureCollection",
-		features: JR()
-	}), $z(), cz(), Cz(), yz(), zR !== null && Jz(zR), Q("offset").textContent = `${WR[0].toFixed(2)} m E, ${WR[1].toFixed(2)} m N`;
+		features: lz()
+	}), wB(), Cz(), Kz(), Rz(), Pz(), XR !== null && yB(XR), Q("offset").textContent = `${tz[0].toFixed(2)} m E, ${tz[1].toFixed(2)} m N`;
 	try {
-		localStorage.setItem(`yarbie.offset.${AR}`, JSON.stringify(WR));
+		localStorage.setItem(`yarbie.offset.${VR}`, JSON.stringify(tz));
 	} catch {}
 }
-function QR() {
+function pz() {
 	try {
 		let e = localStorage.getItem("yarbie.imagery");
-		if (e && DR.some((t) => t.id === e)) return e;
+		if (e && RR.some((t) => t.id === e)) return e;
 	} catch {}
 	return null;
 }
-var $R = !1;
-async function ez() {
-	if ($R) return;
-	$R = !0;
+var mz = !1;
+async function hz() {
+	if (mz) return;
+	mz = !0;
 	let t;
 	try {
 		t = await e.imagery();
@@ -41119,11 +41209,11 @@ async function ez() {
 	}
 	if (t.error || t.hint) {
 		let e = document.createElement("option");
-		e.disabled = !0, e.textContent = t.error ? "Google satellite (unavailable, see message)" : "Google satellite (add GOOGLE_MAPS_API_KEY to .env)", Q("imagery").prepend(e), t.error && sB(t.error, "error");
+		e.disabled = !0, e.textContent = t.error ? "Google satellite (unavailable, see message)" : "Google satellite (add GOOGLE_MAPS_API_KEY to .env)", Q("imagery").prepend(e), t.error && MB(t.error, "error");
 	}
 	for (let e of t.sources) {
-		if (DR.some((t) => t.id === e.id)) continue;
-		DR.push(e), $.addSource(e.id, {
+		if (RR.some((t) => t.id === e.id)) continue;
+		RR.push(e), $.addSource(e.id, {
 			type: "raster",
 			tiles: [e.tiles],
 			tileSize: 256,
@@ -41135,72 +41225,72 @@ async function ez() {
 			id: `imagery-${e.id}`,
 			type: "raster",
 			source: e.id,
-			layout: { visibility: e.id === AR ? "visible" : "none" }
+			layout: { visibility: e.id === VR ? "visible" : "none" }
 		}, t);
 		let n = document.createElement("option");
 		n.value = e.id, n.textContent = e.label, Q("imagery").prepend(n);
 	}
-	kR && DR.some((e) => e.id === kR) && (Q("imagery").value = kR);
+	BR && RR.some((e) => e.id === BR) && (Q("imagery").value = BR);
 }
-function tz(e) {
-	let [t, n] = e, r = DR.filter((e) => !e.covers || n >= e.covers[0] && t >= e.covers[1] && n <= e.covers[2] && t <= e.covers[3]);
-	return OR.find((e) => r.some((t) => t.id === e)) ?? "esri";
+function gz(e) {
+	let [t, n] = e, r = RR.filter((e) => !e.covers || n >= e.covers[0] && t >= e.covers[1] && n <= e.covers[2] && t <= e.covers[3]);
+	return zR.find((e) => r.some((t) => t.id === e)) ?? "esri";
 }
-function nz(e, t = !0) {
-	AR = e, ZL("imagery", {
+function _z(e, t = !0) {
+	VR = e, ZL("imagery", {
 		id: e,
 		remember: t,
-		offset: rz(e),
+		offset: vz(e),
 		layers: $.getStyle().layers.map((e) => `${e.id}:${e.layout?.visibility ?? "visible"}`)
 	}), Q("imagery").value = e;
-	for (let t of DR) $.setLayoutProperty(`imagery-${t.id}`, "visibility", t.id === "esri" || t.id === e ? "visible" : "none");
+	for (let t of RR) $.setLayoutProperty(`imagery-${t.id}`, "visibility", t.id === "esri" || t.id === e ? "visible" : "none");
 	if (t) {
-		kR = e;
+		BR = e;
 		try {
 			localStorage.setItem("yarbie.imagery", e);
 		} catch {}
 	}
-	WR = rz(e), ZR();
+	tz = vz(e), fz();
 }
-function rz(e) {
+function vz(e) {
 	try {
 		let t = JSON.parse(localStorage.getItem(`yarbie.offset.${e}`) ?? "null");
 		if (Array.isArray(t) && t.length === 2) return [Number(t[0]), Number(t[1])];
 	} catch {}
 	return [0, 0];
 }
-var iz;
-function az() {
-	Q("undo").disabled = !KR.canUndo(), Q("redo").disabled = !KR.canRedo(), dz(), $z(), HR && Oz(), window.clearTimeout(iz), iz = window.setTimeout(oz, 350);
+var yz;
+function bz() {
+	Q("undo").disabled = !sz.canUndo(), Q("redo").disabled = !sz.canRedo(), Ez(), wB(), Jz(), $R && Uz(), window.clearTimeout(yz), yz = window.setTimeout(xz, 350);
 }
-async function oz() {
+async function xz() {
 	try {
-		LR = (await e.preview(KR.collection())).ops;
+		JR = (await e.preview(sz.collection())).ops;
 	} catch (e) {
-		sB(`Could not compare with the robot: ${oB(e)}`, "error");
+		MB(`Could not compare with the robot: ${jB(e)}`, "error");
 		return;
 	}
-	sz();
+	Sz();
 }
-function sz() {
+function Sz() {
 	let e = Q("ops");
-	Q("change-count").textContent = String(LR.length), Q("discard-all").disabled = !LR.length, LR.length ? (e.innerHTML = LR.map((e, t) => `<li data-i="${t}" class="${e.supported ? "" : "unsupported"}">
+	Q("change-count").textContent = String(JR.length), Q("discard-all").disabled = !JR.length, JR.length ? (e.innerHTML = JR.map((e, t) => `<li data-i="${t}" class="${e.supported ? "" : "unsupported"}">
           <button class="discard" data-discard="${t}" title="Discard this change">✕</button>
-          <span class="kind ${e.kind}">${e.kind}</span> ${PR(aB(e.family))}
-          <b>${PR(e.name)}</b>${e.changes.length ? ` <span class="hint">(${PR(e.changes.join(", "))})</span>` : ""}
-          ${e.supported ? "" : `<div class="reason">Export only: ${PR(e.reason ?? "")}</div>`}
-          ${e.warnings.map((e, n) => `<div class="warn">⚠ ${PR(e.text)}${e.points.length ? ` <button class="show" data-op="${t}" data-warn="${n}">Show</button>` : ""}</div>`).join("")}
+          <span class="kind ${e.kind}">${e.kind}</span> ${GR(AB(e.family))}
+          <b>${GR(e.name)}</b>${e.changes.length ? ` <span class="hint">(${GR(e.changes.join(", "))})</span>` : ""}
+          ${e.supported ? "" : `<div class="reason">Export only: ${GR(e.reason ?? "")}</div>`}
+          ${e.warnings.map((e, n) => `<div class="warn">⚠ ${GR(e.text)}${e.points.length ? ` <button class="show" data-op="${t}" data-warn="${n}">Show</button>` : ""}</div>`).join("")}
         </li>`).join(""), e.querySelectorAll("button[data-discard]").forEach((e) => e.addEventListener("click", (t) => {
-		t.stopPropagation(), KR.revert(LR[Number(e.dataset.discard)].key), sB("Change discarded.");
+		t.stopPropagation(), sz.revert(JR[Number(e.dataset.discard)].key), MB("Change discarded.");
 	})), e.querySelectorAll("button.show").forEach((e) => e.addEventListener("click", (t) => {
-		t.stopPropagation(), lz(LR[Number(e.dataset.op)].warnings[Number(e.dataset.warn)].points);
+		t.stopPropagation(), wz(JR[Number(e.dataset.op)].warnings[Number(e.dataset.warn)].points);
 	})), e.querySelectorAll("li[data-i]").forEach((e) => e.addEventListener("click", () => {
-		let t = LR[Number(e.dataset.i)];
-		t.kind !== "delete" && KR.select(t.key);
-	}))) : e.innerHTML = "<li class=\"empty\">No changes. Draw or edit something on the map.</li>", cz(), uz();
+		let t = JR[Number(e.dataset.i)];
+		t.kind !== "delete" && sz.select(t.key);
+	}))) : e.innerHTML = "<li class=\"empty\">No changes. Draw or edit something on the map.</li>", Cz(), Tz();
 }
-function cz() {
-	let e = XR(), t = LR.flatMap((t) => t.warnings.flatMap((t) => t.points.map((n) => ({
+function Cz() {
+	let e = dz(), t = JR.flatMap((t) => t.warnings.flatMap((t) => t.points.map((n) => ({
 		type: "Feature",
 		geometry: rR({
 			type: "Point",
@@ -41213,8 +41303,8 @@ function cz() {
 		features: t
 	}), $.getLayer("problems") && $.moveLayer("problems");
 }
-function lz(e) {
-	let t = XR(), n = e.map((e) => rR({
+function wz(e) {
+	let t = dz(), n = e.map((e) => rR({
 		type: "Point",
 		coordinates: e
 	}, t).coordinates);
@@ -41233,53 +41323,53 @@ function lz(e) {
 		});
 	}
 }
-function uz() {
-	let e = Q("apply"), t = LR.filter((e) => e.supported).length, n = !!IR?.writable;
-	e.disabled = !n || t === 0 || !!IR?.busy, e.textContent = UR ? `Confirm: send ${t} to robot` : "Apply to robot", e.className = UR ? "confirm" : "primary";
+function Tz() {
+	let e = Q("apply"), t = JR.filter((e) => e.supported).length, n = !!qR?.writable;
+	e.disabled = !n || t === 0 || !!qR?.busy, e.textContent = ez ? `Confirm: send ${t} to robot` : "Apply to robot", e.className = ez ? "confirm" : "primary";
 	let r = Q("apply-hint");
-	r.textContent = n ? IR?.busy ? "The robot is in a plan. Stop or finish it before changing the map." : LR.length > t ? `${LR.length - t} change(s) can only be exported, not sent.` : t ? "A backup of the robot's map is saved before anything is sent." : "" : IR?.connected ? IR.error ? `Read-only: ${IR.error}.` : "Read-only." : "Not connected to the robot.";
+	r.textContent = n ? qR?.busy ? "The robot is in a plan. Stop or finish it before changing the map." : JR.length > t ? `${JR.length - t} change(s) can only be exported, not sent.` : t ? "A backup of the robot's map is saved before anything is sent." : "" : qR?.connected ? qR.error ? `Read-only: ${qR.error}.` : "Read-only." : "Not connected to the robot.";
 }
-function dz() {
-	UR && (UR = !1, uz());
+function Ez() {
+	ez && (ez = !1, Tz());
 }
-async function fz() {
-	if (FR) {
-		if (!UR) UR = !0, uz();
+async function Dz() {
+	if (KR) {
+		if (!ez) ez = !0, Tz();
 		else {
-			UR = !1, Q("apply").disabled = !0, sB("Sending to the robot…");
+			ez = !1, Q("apply").disabled = !0, MB("Sending to the robot…");
 			try {
-				let t = await e.apply(KR.collection(), FR.revision);
-				t.map && (FR = t.map, KR.load(FR.features), ZR()), await oz(), t.error ? sB(`Stopped after ${t.applied.length} change(s): ${t.error}`, "error") : sB(`Sent ${t.applied.length} change(s) to the robot.`, "ok"), t.backup && wz(t.backup), await Tz();
+				let t = await e.apply(sz.collection(), KR.revision);
+				t.map && (KR = t.map, sz.load(KR.features), fz()), await xz(), t.error ? MB(`Stopped after ${t.applied.length} change(s): ${t.error}`, "error") : MB(`Sent ${t.applied.length} change(s) to the robot.`, "ok"), t.backup && zz(t.backup), await Bz();
 			} catch (e) {
-				sB(oB(e), "error"), uz();
+				MB(jB(e), "error"), Tz();
 			}
 		}
 	}
 }
-var pz = .5, mz, hz = null, gz = !1;
-function _z(e) {
-	e !== gz && (gz = e, Q("run-section").hidden = !e, vz());
+var Oz = .5, kz, Az = null, jz = !1;
+function Mz(e) {
+	e !== jz && (jz = e, Q("run-section").hidden = !e, Nz());
 }
-async function vz() {
-	window.clearTimeout(mz);
-	let t = gz && Q("run-on").checked;
+async function Nz() {
+	window.clearTimeout(kz);
+	let t = jz && Q("run-on").checked;
 	for (let e of ["run-done", "run-left"]) $.setLayoutProperty(e, "visibility", t ? "visible" : "none");
-	if (!t) hz = null, Q("run-info").innerHTML = "", $.getSource("run")?.setData(GR);
+	if (!t) Az = null, Q("run-info").innerHTML = "", $.getSource("run")?.setData(oz);
 	else {
 		try {
-			hz = await e.progress();
+			Az = await e.progress();
 		} catch (e) {
-			Q("run-info").textContent = `Could not read the run: ${oB(e)}`, mz = window.setTimeout(vz, 3e4);
+			Q("run-info").textContent = `Could not read the run: ${jB(e)}`, kz = window.setTimeout(Nz, 3e4);
 			return;
 		}
-		yz(), mz = window.setTimeout(vz, 1e4);
+		Pz(), kz = window.setTimeout(Nz, 1e4);
 	}
 }
-function yz() {
+function Pz() {
 	let e = $.getSource("run");
-	if (!e || !hz) return;
-	let t = XR(), n = [];
-	for (let e of hz.paths ?? []) for (let r of ["done", "left"]) e[r].length > 1 && n.push({
+	if (!e || !Az) return;
+	let t = dz(), n = [];
+	for (let e of Az.paths ?? []) for (let r of ["done", "left"]) e[r].length > 1 && n.push({
 		type: "Feature",
 		geometry: rR({
 			type: "LineString",
@@ -41295,61 +41385,61 @@ function yz() {
 		type: "FeatureCollection",
 		features: n
 	});
-	let r = FR?.reference?.[0] ?? 0, i = 156543.03 * Math.cos(r * Math.PI / 180);
+	let r = KR?.reference?.[0] ?? 0, i = 156543.03 * Math.cos(r * Math.PI / 180);
 	$.setPaintProperty("run-done", "line-width", [
 		"interpolate",
 		["exponential", 2],
 		["zoom"],
 		10,
-		pz * 1024 / i,
+		Oz * 1024 / i,
 		24,
-		pz * 2 ** 24 / i
-	]), bz();
+		Oz * 2 ** 24 / i
+	]), Fz();
 }
-function bz() {
+function Fz() {
 	let e = Q("run-info");
-	if (!hz || !hz.plan) {
+	if (!Az || !Az.plan) {
 		e.textContent = "The robot has no run to show.";
 		return;
 	}
-	let t = (e) => FR?.features.features.find((t) => t.properties.family === "areas" && t.properties.id === e)?.properties.name ?? `#${e}`, n = (e) => e == null ? "?" : e >= 3600 ? `${Math.floor(e / 3600)} h ${Math.round(e % 3600 / 60)} min` : `${Math.round(e / 60)} min`, r = (hz.area_ids ?? []).map((e) => {
-		let n = (hz.paths ?? []).filter((t) => t.area_id === e), r = n.find((e) => e.kind === "fill")?.fraction ?? 0, i = n.find((e) => e.kind === "edge")?.fraction ?? 0, a = r >= 1 && i >= 1 ? "mowed" : r > 0 || i > 0 ? `mowing, ${Math.round(r * 100)}% of rows${i >= 1 ? ", edge done" : ""}` : "not started";
-		return `<li class="${e === hz.current_area ? "now" : ""}"><span>${PR(t(e))}</span><span>${a}</span></li>`;
-	}), i = Math.round(hz.progress ?? 0);
-	e.innerHTML = `<b>${PR(hz.plan.name ?? `Plan ${hz.plan.id}`)}</b> · ${hz.running ? "running" : "last run, not running now"}
+	let t = (e) => KR?.features.features.find((t) => t.properties.family === "areas" && t.properties.id === e)?.properties.name ?? `#${e}`, n = (e) => e == null ? "?" : e >= 3600 ? `${Math.floor(e / 3600)} h ${Math.round(e % 3600 / 60)} min` : `${Math.round(e / 60)} min`, r = (Az.area_ids ?? []).map((e) => {
+		let n = (Az.paths ?? []).filter((t) => t.area_id === e), r = n.find((e) => e.kind === "fill")?.fraction ?? 0, i = n.find((e) => e.kind === "edge")?.fraction ?? 0, a = r >= 1 && i >= 1 ? "mowed" : r > 0 || i > 0 ? `mowing, ${Math.round(r * 100)}% of rows${i >= 1 ? ", edge done" : ""}` : "not started";
+		return `<li class="${e === Az.current_area ? "now" : ""}"><span>${GR(t(e))}</span><span>${a}</span></li>`;
+	}), i = Math.round(Az.progress ?? 0);
+	e.innerHTML = `<b>${GR(Az.plan.name ?? `Plan ${Az.plan.id}`)}</b> · ${Az.running ? "running" : "last run, not running now"}
     <div class="bar"><i style="width:${i}%"></i></div>
-    ${i}% of the plan's area${hz.running ? ` · about ${n(hz.remaining_s)} left` : ""}
+    ${i}% of the plan's area${Az.running ? ` · about ${n(Az.remaining_s)} left` : ""}
     <ul class="run-areas">${r.join("")}</ul>
     <span>Green: mowed. Dashed: still to mow.</span>`;
 }
-var xz = null;
-async function Sz(t = !1) {
+var Iz = null;
+async function Lz(t = !1) {
 	let n = Q("heat-on").checked;
 	if ($.setLayoutProperty("heat", "visibility", n ? "visible" : "none"), !n) return;
 	let r = Q("heat-info");
 	r.textContent = "Reading the robot's run history…";
 	try {
-		xz = await e.heatmap(Number(Q("heat-days").value), t);
+		Iz = await e.heatmap(Number(Q("heat-days").value), t);
 	} catch (e) {
-		r.textContent = `No heat map: ${oB(e)}`;
+		r.textContent = `No heat map: ${jB(e)}`;
 		return;
 	}
-	Cz();
+	Rz();
 	let i = (e) => e ? (/* @__PURE__ */ new Date(e * 1e3)).toLocaleDateString(void 0, { dateStyle: "medium" }) : "?";
-	r.innerHTML = xz.runs ? `<div class="scale"></div>
+	r.innerHTML = Iz.runs ? `<div class="scale"></div>
        <div class="row" style="margin:0;justify-content:space-between"><span>rarely</span><span>most driven</span></div>
-       ${xz.runs} runs, ${i(xz.first)} – ${i(xz.last)}, ${xz.trips} trips out and home.
-       Busiest pathways: ${xz.pathways.map((e) => `${PR(e.name)} (~${e.passes})`).join(", ") || "none"}.
+       ${Iz.runs} runs, ${i(Iz.first)} – ${i(Iz.last)}, ${Iz.trips} trips out and home.
+       Busiest pathways: ${Iz.pathways.map((e) => `${GR(e.name)} (~${e.passes})`).join(", ") || "none"}.
        <br/>An estimate: the robot keeps no record of where it drove, so each run's areas, edge laps and
        recharge trips are spread over today's map.` : "No runs in this period.";
 }
-function Cz() {
+function Rz() {
 	let e = $.getSource("heat");
-	if (!e || !xz) return;
-	let t = XR(), n = [...new Set(xz.cells.map((e) => e[2]))].sort((e, t) => e - t), r = new Map(n.map((e, t) => [e, n.length > 1 ? t / (n.length - 1) : 1])), i = xz.cells[0]?.[1] ?? 0, a = xz.cell_m / 2 / 111320, o = a / Math.cos(i * Math.PI / 180);
+	if (!e || !Iz) return;
+	let t = dz(), n = [...new Set(Iz.cells.map((e) => e[2]))].sort((e, t) => e - t), r = new Map(n.map((e, t) => [e, n.length > 1 ? t / (n.length - 1) : 1])), i = Iz.cells[0]?.[1] ?? 0, a = Iz.cell_m / 2 / 111320, o = a / Math.cos(i * Math.PI / 180);
 	e.setData({
 		type: "FeatureCollection",
-		features: xz.cells.map(([e, n, i]) => {
+		features: Iz.cells.map(([e, n, i]) => {
 			let [s, c] = [e + t[0], n + t[1]];
 			return {
 				type: "Feature",
@@ -41371,47 +41461,48 @@ function Cz() {
 		})
 	});
 }
-function wz(e) {
+function zz(e) {
 	let t = Q("undo-apply-box");
-	t.hidden = !1, t.innerHTML = "<button id=\"undo-apply\">Undo this apply</button>", Q("undo-apply").addEventListener("click", () => Ez(e));
+	t.hidden = !1, t.innerHTML = "<button id=\"undo-apply\">Undo this apply</button>", Q("undo-apply").addEventListener("click", () => Vz(e));
 }
-async function Tz() {
+async function Bz() {
 	let t;
 	try {
 		t = await e.backups();
 	} catch {
 		return;
 	}
-	Q("history").innerHTML = t.length ? t.slice(0, 20).map((e, t) => `<li><div><b>${PR(Dz(e.name))}</b>
+	Q("history").innerHTML = t.length ? t.slice(0, 20).map((e, t) => `<li><div><b>${GR(Hz(e.name))}</b>
             <div class="meta">${t === 0 ? "Before your last apply" : "Before an apply"}</div></div>
-            <button data-revert="${PR(e.name)}">Revert to this</button></li>`).join("") : "<li class=\"meta\">Nothing sent yet.</li>", Q("history").querySelectorAll("button[data-revert]").forEach((e) => e.addEventListener("click", () => Ez(e.dataset.revert)));
+            <button data-revert="${GR(e.name)}">Revert to this</button></li>`).join("") : "<li class=\"meta\">Nothing sent yet.</li>", Q("history").querySelectorAll("button[data-revert]").forEach((e) => e.addEventListener("click", () => Vz(e.dataset.revert)));
 }
-async function Ez(t) {
+async function Vz(t) {
 	try {
 		let { features: n } = await e.backup(t);
-		KR.replaceAll(n.features), Q("undo-apply-box").hidden = !0, sB(`Loaded the map from ${Dz(t)}. Review the changes, then apply them to revert.`, "ok");
+		sz.replaceAll(n.features), Q("undo-apply-box").hidden = !0, MB(`Loaded the map from ${Hz(t)}. Review the changes, then apply them to revert.`, "ok");
 	} catch (e) {
-		sB(`Could not load that backup: ${oB(e)}`, "error");
+		MB(`Could not load that backup: ${jB(e)}`, "error");
 	}
 }
-function Dz(e) {
+function Hz(e) {
 	let t = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/.exec(e);
 	return t ? new Date(Date.UTC(+t[1], t[2] - 1, +t[3], +t[4], +t[5], +t[6])).toLocaleString(void 0, {
 		dateStyle: "medium",
 		timeStyle: "short"
 	}) : e;
 }
-function Oz() {
-	let e = Q("selection"), t = HR ? KR.feature(HR) : void 0;
+function Uz() {
+	let e = Q("selection"), t = $R ? sz.feature($R) : void 0;
 	if (e.hidden = !t, !t) return;
 	let n = t.properties, r = n.id === null, i = Q("selection-body");
 	i.innerHTML = `
-    <p class="facts"><i class="sw ${n.family}"></i> ${PR(aB(n.family))}
+    <p class="facts"><i class="sw ${n.family}"></i> ${GR(AB(n.family))}
       ${r ? "· new" : `· #${n.id}`}${n.area_m2 ? ` · ${Math.round(n.area_m2)} m²` : ""}
       ${n.family === "pathways" && n.start_id === 0 ? " · linked to dock" : ""}</p>
-    <label class="field">Name<input type="text" id="sel-name" value="${PR(n.name)}" /></label>
+    <label class="field">Name<input type="text" id="sel-name" value="${GR(n.name)}" /></label>
     ${n.family === "nogozones" ? `<label class="check"><input type="checkbox" id="sel-enabled" ${n.enabled === !1 ? "" : "checked"}/> Enabled</label>` : ""}
-    ${n.family === "areas" ? `<label class="field">Mowing pattern<select id="sel-pattern">${MR.map(([e, t]) => `<option value="${e}" ${n.algorithm_type === e ? "selected" : ""}>${t}</option>`).join("")}${n.algorithm_type != null && !MR.some(([e]) => e === n.algorithm_type) ? `<option value="${n.algorithm_type}" selected>Type ${n.algorithm_type}</option>` : ""}</select></label>` : ""}
+    ${n.family === "areas" ? `<label class="field">Mowing pattern<select id="sel-pattern">${UR.map(([e, t]) => `<option value="${e}" ${n.algorithm_type === e ? "selected" : ""}>${t}</option>`).join("")}${n.algorithm_type != null && !UR.some(([e]) => e === n.algorithm_type) ? `<option value="${n.algorithm_type}" selected>Type ${n.algorithm_type}</option>` : ""}</select></label>` : ""}
+    ${Gz(t) ? Zz(t) : ""}
     ${n.family === "nogozones" && t.geometry.type === "Polygon" ? "<fieldset><legend>Make it a circle</legend>\n            <p class=\"facts\" id=\"circle-info\"></p>\n            <label class=\"field\">Radius <span class=\"unit\">m</span><input type=\"number\" id=\"circle-r\" step=\"0.1\" min=\"0.2\"/></label>\n            <div class=\"row\"><button id=\"circle-apply\">Make circle</button></div></fieldset>" : ""}
     ${n.family === "nogozones" && t.geometry.type === "Polygon" ? `<fieldset><legend>Move</legend>
             <div class="nudge" style="margin-top:0">
@@ -41420,57 +41511,184 @@ function Oz() {
                 <button data-move="-1,0" title="West">◀</button><span></span><button data-move="1,0" title="East">▶</button>
                 <span></span><button data-move="0,-1" title="South">▼</button><span></span>
               </div>
-              <label class="field" style="margin:0">Step<select id="move-step">${kz.map((e) => `<option value="${e}" ${e === Az ? "selected" : ""}>${e} m</option>`).join("")}</select></label>
+              <label class="field" style="margin:0">Step<select id="move-step">${eB.map((e) => `<option value="${e}" ${e === tB ? "selected" : ""}>${e} m</option>`).join("")}</select></label>
             </div>
             <p class="hint">Arrow keys move it too; Shift+arrow moves five steps.</p></fieldset>` : ""}
     <div class="row"><button id="sel-delete" class="danger">Delete</button></div>
     ${n.family === "areas" && !r ? "<div id=\"params\"><p class=\"hint\">Loading mowing settings…</p></div>" : ""}
   `;
 	let a = t.id;
-	if (Q("sel-name").addEventListener("change", (e) => KR.updateProperties(a, { name: e.target.value.trim() })), Q("sel-enabled")?.addEventListener("change", (e) => KR.updateProperties(a, { enabled: e.target.checked })), Q("sel-pattern")?.addEventListener("change", (e) => KR.updateProperties(a, { algorithm_type: Number(e.target.value) })), n.family === "nogozones" && t.geometry.type === "Polygon") {
+	if (Q("sel-name").addEventListener("change", (e) => sz.updateProperties(a, { name: e.target.value.trim() })), Q("sel-enabled")?.addEventListener("change", (e) => sz.updateProperties(a, { enabled: e.target.checked })), Q("sel-pattern")?.addEventListener("change", (e) => sz.updateProperties(a, { algorithm_type: Number(e.target.value) })), Gz(t) && Qz(t), n.family === "nogozones" && t.geometry.type === "Polygon") {
 		let e = aR(t.geometry.coordinates[0]), r = Q("circle-r");
 		r.value = e.cover.toFixed(1), Q("circle-info").textContent = `A circle of ${e.cover.toFixed(1)} m covers the whole shape; its corners average ${e.average.toFixed(1)} m from the centre.`, Q("circle-apply").addEventListener("click", () => {
 			let t = Number(r.value);
-			if (!(t > 0)) return sB("Give the radius in metres.", "error");
-			KR.setGeometry(a, oR(e.center, t)), sB(`Made ${n.name || "the zone"} a circle of ${t} m. It is a change to review and apply like any other.`, "ok"), Oz();
+			if (!(t > 0)) return MB("Give the radius in metres.", "error");
+			sz.setGeometry(a, oR(e.center, t)), MB(`Made ${n.name || "the zone"} a circle of ${t} m. It is a change to review and apply like any other.`, "ok"), Uz();
 		});
 	}
 	i.querySelectorAll("button[data-move]").forEach((e) => e.addEventListener("click", () => {
 		let [t, n] = e.dataset.move.split(",").map(Number);
-		Nz(t, n);
+		iB(t, n);
 	})), Q("move-step")?.addEventListener("change", (e) => {
-		Az = Number(e.target.value);
+		tB = Number(e.target.value);
 		try {
-			localStorage.setItem("yarbie.moveStep", String(Az));
+			localStorage.setItem("yarbie.moveStep", String(tB));
 		} catch {}
 	}), Q("sel-delete").addEventListener("click", () => {
-		KR.remove(a), HR = null, Oz();
-	}), n.family === "areas" && n.id !== null && Pz(n.id);
+		sz.remove(a), $R = null, Uz();
+	}), n.family === "areas" && n.id !== null && aB(n.id);
 }
-var kz = [
+function Wz() {
+	return qR?.smoothing ?? DR;
+}
+function Gz(e) {
+	return ER.includes(e.properties.family) && e.geometry.type === "Polygon";
+}
+function Kz() {
+	let e = dz(), t = [];
+	for (let n of nz.filter(PR)) {
+		let r = rR(n.geometry, e).coordinates[0];
+		t.push({
+			type: "Feature",
+			properties: {},
+			geometry: {
+				type: "LineString",
+				coordinates: r
+			}
+		});
+		for (let e of r.slice(0, -1)) t.push({
+			type: "Feature",
+			properties: {},
+			geometry: {
+				type: "Point",
+				coordinates: e
+			}
+		});
+	}
+	$.getSource("smooth")?.setData({
+		type: "FeatureCollection",
+		features: t
+	}), t.length && $.getLayer("smooth-line") && ($.moveLayer("smooth-line"), $.moveLayer("smooth-points"));
+}
+function qz() {
+	nz.length && (nz = [], iz.clear(), Kz());
+}
+function Jz() {
+	let e = nz.filter((e) => JSON.stringify(sz.feature(e.id)?.geometry) === rz.get(e.id));
+	if (e.length !== nz.length) {
+		nz = e;
+		for (let t of [...iz]) e.some((e) => e.id === t) || iz.delete(t);
+		Kz(), az && $z();
+	}
+}
+async function Yz(t) {
+	try {
+		let { results: n } = await e.smooth(sz.collection(), t, AR(Wz()), kR.arcs, kR.keepShared);
+		nz = n, rz.clear();
+		for (let e of n) rz.set(e.id, JSON.stringify(sz.feature(e.id)?.geometry));
+		return Kz(), !0;
+	} catch (e) {
+		return MB(`Could not smooth: ${jB(e)}`, "error"), !1;
+	}
+}
+function Xz(e) {
+	let t = new Map(e.filter(PR).map((e) => [e.id, e.geometry]));
+	return qz(), t.size && sz.setGeometries(t), t.size;
+}
+function Zz(e) {
+	let t = e.properties.family, n = Wz(), r = nz.find((t) => t.id === e.id);
+	return `<fieldset><legend>Smooth outline</legend>
+    <p class="hint" style="margin-top:0">Fewer points and rounder curves. ${t === "areas" ? "The area only gets smaller." : "The zone only gets bigger."}</p>
+    ${FR("sm", n, t === "areas")}
+    <div class="row"><button id="sm-preview">${r ? "Preview again" : "Preview"}</button></div>
+    ${r ? `<p class="facts" style="margin-top:8px">${GR(NR(r, t, n))}</p>
+          <div class="row"><button id="sm-use" class="primary" ${PR(r) ? "" : "disabled"}>Use smoothed outline</button>
+          <button id="sm-discard">Discard</button></div>` : ""}</fieldset>`;
+}
+function Qz(e) {
+	let t = e.id, n = e.properties.name || "the outline";
+	Q("sm-preview")?.addEventListener("click", async (e) => {
+		if (!IR("sm", Wz())) return MB(`Give how far a line may move, in ${Wz().unit}.`, "error");
+		let n = e.currentTarget;
+		n.disabled = !0, n.textContent = "Working…", await Yz([t]), Uz();
+	}), Q("sm-use")?.addEventListener("click", () => {
+		let r = nz.find((e) => e.id === t);
+		if (!r) return;
+		let i = NR(r, e.properties.family, Wz());
+		Xz([r]), MB(`Smoothed ${n}: ${i}. It is a change to review and apply like any other.`, "ok");
+	}), Q("sm-discard")?.addEventListener("click", () => {
+		qz(), Uz();
+	});
+}
+function $z() {
+	let e = Q("smooth-all");
+	if (e.hidden = !az, Q("smooth-all-open").classList.toggle("active", az), !az) return;
+	let t = Wz(), n = nz.filter(PR), r = (e) => sz.feature(e)?.properties.family ?? "areas", i = n.map((e) => {
+		let n = sz.feature(e.id);
+		return `<li><label class="check" style="align-items:flex-start;margin:0">
+        <input type="checkbox" data-smooth="${GR(e.id)}" ${iz.has(e.id) ? "checked" : ""}/>
+        <span><a href="#" data-smooth-show="${GR(e.id)}"><i class="sw ${r(e.id)}"></i>${GR(n?.properties.name || e.id)}</a>
+        <br><span class="hint">${GR(NR(e, r(e.id), t))}</span></span></label></li>`;
+	}).join(""), a = (e) => {
+		let t = nz.filter((t) => r(t.id) === e), n = t.reduce((e, t) => e + t.stats.before, 0), i = t.reduce((e, t) => e + t.stats.after, 0);
+		return t.length ? `${e === "areas" ? "Areas" : "No-go zones"}: ${n.toLocaleString()} → ${i.toLocaleString()} points` : "";
+	};
+	e.innerHTML = `<fieldset><legend>Smooth every area and no-go zone</legend>
+    <p class="hint" style="margin-top:0">Areas only get smaller and no-go zones only bigger. Nothing goes to the robot until you apply the changes.</p>
+    ${FR("sa", t, !0)}
+    <div class="row"><button id="sa-preview">${nz.length ? "Preview again" : "Preview"}</button><button id="sa-close">Close</button></div>
+    ${nz.length ? `<p class="facts" style="margin-top:8px">${[a("areas"), a("nogozones")].filter(Boolean).join(" · ")}${n.length < nz.length ? ` · ${nz.length - n.length} already as simple as this allows` : ""}</p>
+          <ul class="plans">${i}</ul>
+          <div class="row"><button id="sa-use" class="primary" ${iz.size ? "" : "disabled"}>Use ticked (${iz.size})</button></div>` : ""}</fieldset>`, Q("sa-preview").addEventListener("click", async (e) => {
+		if (!IR("sa", t)) return MB(`Give how far a line may move, in ${t.unit}.`, "error");
+		let n = e.currentTarget;
+		if (n.disabled = !0, n.textContent = "Working…", await Yz(sz.features().filter(Gz).map((e) => e.id))) {
+			iz.clear();
+			for (let e of nz.filter(PR)) iz.add(e.id);
+		}
+		$z();
+	}), Q("sa-close").addEventListener("click", () => {
+		az = !1, qz(), $z();
+	}), e.querySelectorAll("input[data-smooth]").forEach((e) => e.addEventListener("change", () => {
+		e.checked ? iz.add(e.dataset.smooth) : iz.delete(e.dataset.smooth);
+		let t = Q("sa-use");
+		t.disabled = !iz.size, t.textContent = `Use ticked (${iz.size})`;
+	})), e.querySelectorAll("a[data-smooth-show]").forEach((e) => e.addEventListener("click", (t) => {
+		t.preventDefault();
+		let n = sz.feature(e.dataset.smoothShow), r = n ? iR([{ geometry: rR(n.geometry, dz()) }]) : null;
+		r && $.fitBounds(r, {
+			padding: 60,
+			maxZoom: 21
+		});
+	})), Q("sa-use")?.addEventListener("click", () => {
+		let e = Xz(nz.filter((e) => iz.has(e.id)));
+		az = !1, $z(), MB(`Smoothed ${e} outline${e === 1 ? "" : "s"}. They are changes to review and apply like any other; Undo takes them all back.`, "ok");
+	});
+}
+var eB = [
 	.1,
 	.25,
 	.5,
 	1
-], Az = (() => {
+], tB = (() => {
 	try {
 		let e = Number(localStorage.getItem("yarbie.moveStep"));
-		if (kz.includes(e)) return e;
+		if (eB.includes(e)) return e;
 	} catch {}
 	return .25;
-})(), jz = [0, 0], Mz = null;
-function Nz(e, t) {
-	let n = HR ? KR.feature(HR) : void 0;
+})(), nB = [0, 0], rB = null;
+function iB(e, t) {
+	let n = $R ? sz.feature($R) : void 0;
 	if (!n || n.properties.family !== "nogozones" || n.geometry.type !== "Polygon") return;
-	let r = n.geometry.coordinates[0][0][1], i = eR(e * Az, t * Az, r);
-	KR.setGeometry(n.id, rR(n.geometry, i)), Mz !== n.id && (jz = [0, 0]), Mz = n.id, jz = [jz[0] + e * Az, jz[1] + t * Az];
+	let r = n.geometry.coordinates[0][0][1], i = eR(e * tB, t * tB, r);
+	sz.setGeometry(n.id, rR(n.geometry, i)), rB !== n.id && (nB = [0, 0]), rB = n.id, nB = [nB[0] + e * tB, nB[1] + t * tB];
 	let a = (e, t, n) => Math.abs(e) < 1e-9 ? "" : `${Math.abs(e).toFixed(2)} m ${e > 0 ? t : n}`;
-	sB(`Moved ${n.properties.name || "the zone"} ${[a(jz[1], "north", "south"), a(jz[0], "east", "west")].filter(Boolean).join(", ")} so far.`);
+	MB(`Moved ${n.properties.name || "the zone"} ${[a(nB[1], "north", "south"), a(nB[0], "east", "west")].filter(Boolean).join(", ")} so far.`);
 }
-async function Pz(t) {
+async function aB(t) {
 	let n = Q("params");
 	if (!n) return;
-	if (IR && !IR.writable) {
+	if (qR && !qR.writable) {
 		n.innerHTML = "<p class=\"hint\">Mowing settings need a connection to the robot.</p>";
 		return;
 	}
@@ -41478,10 +41696,10 @@ async function Pz(t) {
 	try {
 		({params: r, editable: i} = await e.mowerParams(t));
 	} catch (e) {
-		n.innerHTML = `<p class="hint">${PR(oB(e))}</p>`;
+		n.innerHTML = `<p class="hint">${GR(jB(e))}</p>`;
 		return;
 	}
-	let a = (FR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null && e.properties.id !== t).map((e) => ({
+	let a = (KR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null && e.properties.id !== t).map((e) => ({
 		id: e.properties.id,
 		name: e.properties.name
 	}));
@@ -41494,13 +41712,13 @@ async function Pz(t) {
 		let r = [t, ...[...n.querySelectorAll("input[data-also]:checked")].map((e) => Number(e.dataset.also))], i = [];
 		try {
 			for (let t of r) await e.updateMowerParams(t, s), i.push(t);
-			sB(`Mowing settings saved to ${i.length === 1 ? "this area" : `${i.length} areas`}.`, "ok"), HR && KR.feature(HR)?.properties.id === t && Pz(t);
+			MB(`Mowing settings saved to ${i.length === 1 ? "this area" : `${i.length} areas`}.`, "ok"), $R && sz.feature($R)?.properties.id === t && aB(t);
 		} catch (e) {
-			sB(`Saved to ${i.length} of ${r.length} areas, then: ${oB(e)}`, "error"), o.disabled = !1;
+			MB(`Saved to ${i.length} of ${r.length} areas, then: ${jB(e)}`, "error"), o.disabled = !1;
 		}
 	});
 }
-var Fz = [], Iz = null, Lz = {
+var oB = [], sB = null, cB = {
 	completed: "Completed",
 	partial: "Ended early",
 	returned_to_dock: "Sent home",
@@ -41509,7 +41727,7 @@ var Fz = [], Iz = null, Lz = {
 	running: "Running",
 	unknown: "Unknown end"
 };
-function Rz(e) {
+function lB(e) {
 	return e ? (/* @__PURE__ */ new Date(e * 1e3)).toLocaleString(void 0, {
 		weekday: "short",
 		month: "short",
@@ -41518,48 +41736,48 @@ function Rz(e) {
 		minute: "2-digit"
 	}) : "";
 }
-function zz(e) {
+function uB(e) {
 	if (e == null) return "";
 	let t = Math.round(e / 60);
 	return t >= 60 ? `${Math.floor(t / 60)} h ${t % 60} min` : `${t} min`;
 }
-async function Bz(t) {
+async function dB(t) {
 	let n = Q("runs-plan"), r = n.value ? Number(n.value) : void 0, i;
 	try {
 		i = await e.runs(t, r);
 	} catch (e) {
-		Q("runs").innerHTML = `<li class="meta">${PR(oB(e))}</li>`;
+		Q("runs").innerHTML = `<li class="meta">${GR(jB(e))}</li>`;
 		return;
 	}
-	Fz = i.runs;
+	oB = i.runs;
 	let a = n.value;
-	n.innerHTML = "<option value=\"\">All plans</option>" + i.plans.map((e) => `<option value="${e.id}" ${String(e.id) === a ? "selected" : ""}>${PR(e.name)}</option>`).join(""), Q("runs").innerHTML = Fz.length ? Fz.map((e) => {
+	n.innerHTML = "<option value=\"\">All plans</option>" + i.plans.map((e) => `<option value="${e.id}" ${String(e.id) === a ? "selected" : ""}>${GR(e.name)}</option>`).join(""), Q("runs").innerHTML = oB.length ? oB.map((e) => {
 		let t = [
-			e.work_s == null ? "" : zz(e.work_s),
+			e.work_s == null ? "" : uB(e.work_s),
 			e.progress == null ? "" : `${e.progress}%`,
 			e.charge_trips ? `${e.charge_trips} charge${e.charge_trips === 1 ? "" : "s"}` : "",
 			e.battery_used == null ? "" : `${e.battery_used}% battery`
 		].filter(Boolean);
-		return `<li data-run="${PR(e.key)}" class="${Iz === e.key ? "showing" : ""}">
-            <div><b>${PR(Rz(e.started))}</b> <span class="outcome ${PR(e.outcome)}">${PR(Lz[e.outcome] ?? e.outcome)}</span>
-              <div class="meta">${PR(e.plan ?? "Unknown plan")}${t.length ? " · " + PR(t.join(" · ")) : ""}</div></div>
-            <button data-show-run="${PR(e.key)}">${Iz === e.key ? "Hide" : "Show"}</button>
+		return `<li data-run="${GR(e.key)}" class="${sB === e.key ? "showing" : ""}">
+            <div><b>${GR(lB(e.started))}</b> <span class="outcome ${GR(e.outcome)}">${GR(cB[e.outcome] ?? e.outcome)}</span>
+              <div class="meta">${GR(e.plan ?? "Unknown plan")}${t.length ? " · " + GR(t.join(" · ")) : ""}</div></div>
+            <button data-show-run="${GR(e.key)}">${sB === e.key ? "Hide" : "Show"}</button>
           </li>`;
-	}).join("") : "<li class=\"meta\">No runs yet.</li>", Q("runs").querySelectorAll("button[data-show-run]").forEach((e) => e.addEventListener("click", () => Vz(e.dataset.showRun)));
+	}).join("") : "<li class=\"meta\">No runs yet.</li>", Q("runs").querySelectorAll("button[data-show-run]").forEach((e) => e.addEventListener("click", () => fB(e.dataset.showRun)));
 }
-async function Vz(t) {
-	if (Iz === t) Iz = null, Q("run-detail").hidden = !0, $.getSource("past-run").setData(GR);
+async function fB(t) {
+	if (sB === t) sB = null, Q("run-detail").hidden = !0, $.getSource("past-run").setData(oz);
 	else try {
-		Hz(await e.run(t));
+		pB(await e.run(t));
 	} catch (e) {
-		sB(`Cannot show that run: ${oB(e)}`, "error");
+		MB(`Cannot show that run: ${jB(e)}`, "error");
 		return;
 	}
-	await Bz(!1);
+	await dB(!1);
 }
-function Hz(e) {
-	Iz = e.key;
-	let t = e.area_states ?? {}, n = XR(), r = (FR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null && String(e.properties.id) in t).map((e) => ({
+function pB(e) {
+	sB = e.key;
+	let t = e.area_states ?? {}, n = dz(), r = (KR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null && String(e.properties.id) in t).map((e) => ({
 		type: "Feature",
 		geometry: rR(e.geometry, n),
 		properties: { state: t[String(e.properties.id)] }
@@ -41574,7 +41792,7 @@ function Hz(e) {
 		maxZoom: 21
 	});
 	let a = [];
-	a.push(`<div class="meta">${PR(e.plan ?? "Unknown plan")}, started ${PR(Rz(e.started))}${e.started_by ? ` by ${PR(e.started_by)}` : ""}.</div>`), e.mowed_m2 != null && e.total_m2 && a.push(`<div class="meta">Mowed ${Math.round(e.mowed_m2)} of ${Math.round(e.total_m2)} m²${e.rain ? "; rain was detected" : ""}.</div>`);
+	a.push(`<div class="meta">${GR(e.plan ?? "Unknown plan")}, started ${GR(lB(e.started))}${e.started_by ? ` by ${GR(e.started_by)}` : ""}.</div>`), e.mowed_m2 != null && e.total_m2 && a.push(`<div class="meta">Mowed ${Math.round(e.mowed_m2)} of ${Math.round(e.total_m2)} m²${e.rain ? "; rain was detected" : ""}.</div>`);
 	let o = [];
 	for (let t of e.segments ?? []) {
 		let e = t.battery_start != null && t.battery_end != null ? ` (battery ${t.battery_start}% → ${t.battery_end}%)` : "";
@@ -41589,70 +41807,70 @@ function Hz(e) {
 		}[t.kind] ?? t.kind;
 		o.push([t.at, e]);
 	}
-	o.sort((e, t) => e[0] - t[0]), o.length && a.push(`<ul class="timeline">${o.map(([e, t]) => `<li><span>${PR((/* @__PURE__ */ new Date(e * 1e3)).toLocaleTimeString(void 0, {
+	o.sort((e, t) => e[0] - t[0]), o.length && a.push(`<ul class="timeline">${o.map(([e, t]) => `<li><span>${GR((/* @__PURE__ */ new Date(e * 1e3)).toLocaleTimeString(void 0, {
 		hour: "2-digit",
 		minute: "2-digit"
-	}))}</span> ${PR(t)}</li>`).join("")}</ul>`), e.source.includes("yarbie") || a.push("<p class=\"hint\">From the robot's own record only: yarbie was not watching this run, so it cannot say why it ended.</p>"), a.push("<p class=\"hint\">Green: finished. Amber: only the edge pass was finished. Red: not finished. Shown on today&apos;s map.</p>");
+	}))}</span> ${GR(t)}</li>`).join("")}</ul>`), e.source.includes("yarbie") || a.push("<p class=\"hint\">From the robot's own record only: yarbie was not watching this run, so it cannot say why it ended.</p>"), a.push("<p class=\"hint\">Green: finished. Amber: only the edge pass was finished. Red: not finished. Shown on today&apos;s map.</p>");
 	let s = Q("run-detail");
 	s.innerHTML = a.join(""), s.hidden = !1;
 }
-async function Uz() {
+async function mB() {
 	try {
-		RR = await e.plans();
+		YR = await e.plans();
 	} catch (e) {
-		Q("plans").innerHTML = `<li class="meta">${PR(oB(e))}</li>`;
+		Q("plans").innerHTML = `<li class="meta">${GR(jB(e))}</li>`;
 		return;
 	}
-	let t = (e) => FR?.features.features.find((t) => t.properties.family === "areas" && t.properties.id === e)?.properties.name ?? `#${e}`;
-	Q("plans").innerHTML = RR.length ? RR.map((e) => `<li data-plan="${e.id}" class="${zR === e.id ? "showing" : ""}">
-            <div><b>${PR(e.name)}</b><div class="meta">${e.area_ids.map((e) => PR(t(e))).join(", ")}</div>${Gz(e.id)}</div>
+	let t = (e) => KR?.features.features.find((t) => t.properties.family === "areas" && t.properties.id === e)?.properties.name ?? `#${e}`;
+	Q("plans").innerHTML = YR.length ? YR.map((e) => `<li data-plan="${e.id}" class="${XR === e.id ? "showing" : ""}">
+            <div><b>${GR(e.name)}</b><div class="meta">${e.area_ids.map((e) => GR(t(e))).join(", ")}</div>${gB(e.id)}</div>
             <span class="row" style="margin:0">
-              <button data-route="${e.id}" title="Show the route the robot would take" ${BR.get(e.id)?.kind === "computing" ? "disabled" : ""}>${Wz(e.id)}</button>
+              <button data-route="${e.id}" title="Show the route the robot would take" ${ZR.get(e.id)?.kind === "computing" ? "disabled" : ""}>${hB(e.id)}</button>
               <button data-edit="${e.id}">Edit</button>
             </span>
-          </li>`).join("") : "<li class=\"meta\">No plans.</li>", Q("plans").querySelectorAll("button[data-route]").forEach((e) => e.addEventListener("click", () => qz(Number(e.dataset.route)))), Q("plans").querySelectorAll("button[data-edit]").forEach((e) => e.addEventListener("click", () => Yz(RR.find((t) => t.id === Number(e.dataset.edit)) ?? null)));
+          </li>`).join("") : "<li class=\"meta\">No plans.</li>", Q("plans").querySelectorAll("button[data-route]").forEach((e) => e.addEventListener("click", () => vB(Number(e.dataset.route)))), Q("plans").querySelectorAll("button[data-edit]").forEach((e) => e.addEventListener("click", () => bB(YR.find((t) => t.id === Number(e.dataset.edit)) ?? null)));
 }
-function Wz(e) {
-	return BR.get(e)?.kind === "computing" ? "Computing…" : zR === e ? "Hide" : "Route";
+function hB(e) {
+	return ZR.get(e)?.kind === "computing" ? "Computing…" : XR === e ? "Hide" : "Route";
 }
-function Gz(e) {
-	let t = BR.get(e);
+function gB(e) {
+	let t = ZR.get(e);
 	if (!t) return "";
 	let n = t.text;
-	return t.kind === "computing" && (n += ` (${Math.round((Date.now() - t.since) / 1e3)} s)`), `<div class="route-status ${t.kind}" data-route-status="${e}">${PR(n)}</div>`;
+	return t.kind === "computing" && (n += ` (${Math.round((Date.now() - t.since) / 1e3)} s)`), `<div class="route-status ${t.kind}" data-route-status="${e}">${GR(n)}</div>`;
 }
-function Kz() {
-	let e = [...BR].filter(([, e]) => e.kind === "computing");
+function _B() {
+	let e = [...ZR].filter(([, e]) => e.kind === "computing");
 	for (let [t] of e) {
 		let e = Q("plans").querySelector(`[data-route-status="${t}"]`);
-		e && (e.outerHTML = Gz(t));
+		e && (e.outerHTML = gB(t));
 	}
-	e.length || (window.clearInterval(VR), VR = void 0);
+	e.length || (window.clearInterval(QR), QR = void 0);
 }
-async function qz(e) {
-	BR.get(e)?.kind !== "computing" && (zR === e ? (zR = null, BR.delete(e), $.getSource("route").setData(GR)) : await Jz(e), await Uz());
+async function vB(e) {
+	ZR.get(e)?.kind !== "computing" && (XR === e ? (XR = null, ZR.delete(e), $.getSource("route").setData(oz)) : await yB(e), await mB());
 }
-async function Jz(t) {
-	BR.set(t, {
+async function yB(t) {
+	ZR.set(t, {
 		kind: "computing",
 		text: "The robot is working out the route; a big yard can take a minute or more.",
 		since: Date.now()
-	}), VR ??= window.setInterval(Kz, 1e3), await Uz();
+	}), QR ??= window.setInterval(_B, 1e3), await mB();
 	try {
 		let n = await e.route(t);
 		if (!n.features.length) {
-			BR.set(t, {
+			ZR.set(t, {
 				kind: "error",
 				text: "The robot returned no route for this plan.",
 				since: Date.now()
 			});
 			return;
 		}
-		let r = XR(), i = n.features.map((e) => ({
+		let r = dz(), i = n.features.map((e) => ({
 			...e,
 			geometry: rR(e.geometry, r)
 		}));
-		zR !== null && zR !== t && BR.delete(zR), zR = t, $.getSource("route").setData({
+		XR !== null && XR !== t && ZR.delete(XR), XR = t, $.getSource("route").setData({
 			type: "FeatureCollection",
 			features: i
 		});
@@ -41662,28 +41880,28 @@ async function Jz(t) {
 			maxZoom: 21
 		});
 		let o = n.total_s ? `about ${Math.round(n.total_s / 60)} min` : "no time estimate", s = new Set(n.features.map((e) => `${e.properties.area_id}`)).size;
-		BR.set(t, {
+		ZR.set(t, {
 			kind: "ok",
 			text: `Route shown: ${s} area${s === 1 ? "" : "s"}, ${o}. Dashed blue is the edge lap.`,
 			since: Date.now()
 		});
 	} catch (e) {
-		BR.set(t, {
+		ZR.set(t, {
 			kind: "error",
-			text: `No route: ${oB(e)}`,
+			text: `No route: ${jB(e)}`,
 			since: Date.now()
 		});
 	}
 }
-function Yz(t) {
+function bB(t) {
 	let n = Q("plan-editor");
 	n.hidden = !1;
-	let r = (FR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null);
+	let r = (KR?.features.features ?? []).filter((e) => e.properties.family === "areas" && e.properties.id !== null);
 	n.innerHTML = `
     <h2 style="margin-top:12px">${t ? "Edit plan" : "New plan"}</h2>
-    <label class="field">Name<input type="text" id="plan-name" value="${PR(t?.name ?? "")}" /></label>
+    <label class="field">Name<input type="text" id="plan-name" value="${GR(t?.name ?? "")}" /></label>
     ${r.map((e) => `<label class="check"><input type="checkbox" data-area="${e.properties.id}"
-          ${t?.area_ids.includes(e.properties.id) ? "checked" : ""}/> ${PR(e.properties.name)}</label>`).join("")}
+          ${t?.area_ids.includes(e.properties.id) ? "checked" : ""}/> ${GR(e.properties.name)}</label>`).join("")}
     <div class="row">
       <button id="plan-save" class="primary">Save to robot</button>
       ${t ? "<button id=\"plan-delete\" class=\"danger\">Delete</button>" : ""}
@@ -41695,34 +41913,34 @@ function Yz(t) {
 	};
 	Q("plan-cancel").addEventListener("click", i), Q("plan-save").addEventListener("click", async () => {
 		let r = Q("plan-name").value.trim(), a = [...n.querySelectorAll("input[data-area]:checked")].map((e) => Number(e.dataset.area));
-		if (!r || !a.length) return sB("A plan needs a name and at least one area.", "error");
+		if (!r || !a.length) return MB("A plan needs a name and at least one area.", "error");
 		try {
-			t ? await e.updatePlan(t.id, r, a) : await e.createPlan(r, a), i(), sB("Plan saved.", "ok"), await Uz();
+			t ? await e.updatePlan(t.id, r, a) : await e.createPlan(r, a), i(), MB("Plan saved.", "ok"), await mB();
 		} catch (e) {
-			sB(oB(e), "error");
+			MB(jB(e), "error");
 		}
 	}), Q("plan-delete")?.addEventListener("click", async (n) => {
 		let r = n.currentTarget;
 		if (!r.classList.contains("confirm")) r.classList.add("confirm"), r.textContent = "Confirm delete";
 		else try {
-			await e.deletePlan(t.id), i(), sB("Plan deleted.", "ok"), await Uz();
+			await e.deletePlan(t.id), i(), MB("Plan deleted.", "ok"), await mB();
 		} catch (e) {
-			sB(oB(e), "error");
+			MB(jB(e), "error");
 		}
 	});
 }
-async function Xz() {
+async function xB() {
 	try {
-		IR = await e.status();
+		qR = await e.status();
 	} catch {
-		IR = null;
+		qR = null;
 	}
 	let t = Q("status");
-	if (!IR) t.textContent = "backend offline", t.className = "pill bad";
+	if (!qR) t.textContent = "backend offline", t.className = "pill bad";
 	else {
-		let e = [IR.source.toUpperCase()];
-		IR.activity && e.push(IR.activity), IR.battery != null && e.push(`${IR.battery}%`), t.textContent = e.join(" · "), t.className = `pill ${IR.connected ? IR.writable ? "ok" : "ro" : "bad"}`, t.title = IR.writable ? "Connected: edits can be sent" : "Read-only", Q("demo-banner").hidden = IR.source !== "sim", _z(!!IR.connected && !!IR.busy);
-		let n = $.getSource("robot"), r = IR.position;
+		let e = [qR.source.toUpperCase()];
+		qR.activity && e.push(qR.activity), qR.battery != null && e.push(`${qR.battery}%`), t.textContent = e.join(" · "), t.className = `pill ${qR.connected ? qR.writable ? "ok" : "ro" : "bad"}`, t.title = qR.writable ? "Connected: edits can be sent" : "Read-only", Q("demo-banner").hidden = qR.source !== "sim", Mz(!!qR.connected && !!qR.busy);
+		let n = $.getSource("robot"), r = qR.position;
 		n?.setData(r ? {
 			type: "FeatureCollection",
 			features: [{
@@ -41730,32 +41948,32 @@ async function Xz() {
 				geometry: rR({
 					type: "Point",
 					coordinates: [r.lon, r.lat]
-				}, XR()),
+				}, dz()),
 				properties: {}
 			}]
-		} : GR);
+		} : oz);
 	}
-	uz(), window.setTimeout(Xz, 4e3);
+	Tz(), window.setTimeout(xB, 4e3);
 }
-var Zz = /* @__PURE__ */ new Set();
-function Qz() {
-	let e = [...sR, ...jR];
-	Q("layers").innerHTML = e.map((e) => `<label><input type="checkbox" data-layer="${e}" checked /> <i class="sw ${e}"></i>${PR(aB(e))}</label>`).join("") + "<label><input type=\"checkbox\" data-layer=\"labels\" checked /> Labels</label>", Q("layers").querySelectorAll("input[data-layer]").forEach((e) => e.addEventListener("change", () => {
+var SB = /* @__PURE__ */ new Set();
+function CB() {
+	let e = [...sR, ...HR];
+	Q("layers").innerHTML = e.map((e) => `<label><input type="checkbox" data-layer="${e}" checked /> <i class="sw ${e}"></i>${GR(AB(e))}</label>`).join("") + "<label><input type=\"checkbox\" data-layer=\"labels\" checked /> Labels</label>", Q("layers").querySelectorAll("input[data-layer]").forEach((e) => e.addEventListener("change", () => {
 		let t = e.dataset.layer;
 		if (t === "labels") {
 			$.setLayoutProperty("labels", "visibility", e.checked ? "visible" : "none");
 			return;
 		}
 		let n = t;
-		e.checked ? Zz.delete(n) : Zz.add(n), sR.includes(n) && KR.setHidden(n, !e.checked), ZR();
+		e.checked ? SB.delete(n) : SB.add(n), sR.includes(n) && sz.setHidden(n, !e.checked), fz();
 	}));
 }
-function $z() {
-	let e = XR(), t = KR.features().filter((e) => !Zz.has(e.properties.family) && e.properties.name).map((t) => ({
+function wB() {
+	let e = dz(), t = sz.features().filter((e) => !SB.has(e.properties.family) && e.properties.name).map((t) => ({
 		type: "Feature",
 		geometry: rR({
 			type: "Point",
-			coordinates: eB(t)
+			coordinates: TB(t)
 		}, e),
 		properties: { name: t.properties.name }
 	}));
@@ -41764,34 +41982,36 @@ function $z() {
 		features: t
 	});
 }
-function eB(e) {
+function TB(e) {
 	let t = e.geometry, n = t.type === "Polygon" ? t.coordinates[0].slice(0, -1) : t.type === "LineString" ? t.coordinates : [t.coordinates];
 	if (t.type === "LineString") return n[Math.floor(n.length / 2)];
 	let r = n.length || 1;
 	return [n.reduce((e, t) => e + t[0], 0) / r, n.reduce((e, t) => e + t[1], 0) / r];
 }
-function tB() {
-	Q("runs-plan").addEventListener("change", () => void Bz(!1)), Q("runs-refresh").addEventListener("click", () => void Bz(!0));
+function EB() {
+	Q("runs-plan").addEventListener("change", () => void dB(!1)), Q("runs-refresh").addEventListener("click", () => void dB(!0));
 	let e = Q("tools").querySelectorAll("button[data-tool]"), t = (t) => {
-		KR.setTool(t), e.forEach((e) => e.classList.toggle("active", e.dataset.tool === t)), Q("tool-hint").textContent = t === "select" ? "Click a shape to select it. Drag its corners; drag a midpoint to add one; right-click a corner to delete it." : t === "areas" ? "Click to add corners; click the first corner to finish. New areas can be exported but not sent: the robot maps areas by driving them." : nB.includes(t) ? "Click to add corners; click the first corner to finish. Esc cancels." : "Click to add points; click the last point again to finish. Start a pathway on the dock to link it.";
+		sz.setTool(t), e.forEach((e) => e.classList.toggle("active", e.dataset.tool === t)), Q("tool-hint").textContent = t === "select" ? "Click a shape to select it. Drag its corners; drag a midpoint to add one; right-click a corner to delete it." : t === "areas" ? "Click to add corners; click the first corner to finish. New areas can be exported but not sent: the robot maps areas by driving them." : DB.includes(t) ? "Click to add corners; click the first corner to finish. Esc cancels." : "Click to add points; click the last point again to finish. Start a pathway on the dock to link it.";
 	};
-	e.forEach((e) => e.addEventListener("click", () => t(e.dataset.tool))), t("select"), Q("run-on").addEventListener("change", () => vz()), Q("heat-on").addEventListener("change", () => Sz()), Q("heat-days").addEventListener("change", () => Sz()), Q("heat-refresh").addEventListener("click", () => Sz(!0)), Q("undo").addEventListener("click", () => KR.undo()), Q("redo").addEventListener("click", () => KR.redo()), Q("discard-all").addEventListener("click", (e) => {
+	e.forEach((e) => e.addEventListener("click", () => t(e.dataset.tool))), t("select"), Q("run-on").addEventListener("change", () => Nz()), Q("heat-on").addEventListener("change", () => Lz()), Q("heat-days").addEventListener("change", () => Lz()), Q("heat-refresh").addEventListener("click", () => Lz(!0)), Q("undo").addEventListener("click", () => sz.undo()), Q("redo").addEventListener("click", () => sz.redo()), Q("discard-all").addEventListener("click", (e) => {
 		let t = e.currentTarget;
-		t.classList.contains("confirm") ? (t.classList.remove("confirm"), t.textContent = "Discard all", KR.revertAll(), sB("All unsent changes discarded.")) : (t.classList.add("confirm"), t.textContent = `Discard ${LR.length}?`, window.setTimeout(() => {
+		t.classList.contains("confirm") ? (t.classList.remove("confirm"), t.textContent = "Discard all", sz.revertAll(), MB("All unsent changes discarded.")) : (t.classList.add("confirm"), t.textContent = `Discard ${JR.length}?`, window.setTimeout(() => {
 			t.classList.remove("confirm"), t.textContent = "Discard all";
 		}, 3e3));
 	}), Q("reload").addEventListener("click", async () => {
-		await qR(!1), await Uz();
-	}), Q("fit").addEventListener("click", YR), Q("apply").addEventListener("click", fz), Q("export").addEventListener("click", rB), Q("import").addEventListener("change", iB), document.querySelectorAll("button[data-nudge]").forEach((e) => e.addEventListener("click", () => {
+		await cz(!1), await mB();
+	}), Q("fit").addEventListener("click", uz), Q("smooth-all-open").addEventListener("click", () => {
+		az = !az, qz(), $z(), $R && Uz();
+	}), Q("apply").addEventListener("click", Dz), Q("export").addEventListener("click", OB), Q("import").addEventListener("change", kB), document.querySelectorAll("button[data-nudge]").forEach((e) => e.addEventListener("click", () => {
 		let t = e.dataset.nudge;
-		if (t === "reset") WR = [0, 0];
+		if (t === "reset") tz = [0, 0];
 		else {
 			let [e, n] = t.split(",").map(Number);
-			WR = [WR[0] + e * NR, WR[1] + n * NR];
+			tz = [tz[0] + e * WR, tz[1] + n * WR];
 		}
-		ZR();
+		fz();
 	})), window.addEventListener("keydown", (e) => {
-		if (!e.key.startsWith("Arrow") || e.metaKey || e.ctrlKey || e.altKey || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || !HR || KR.feature(HR)?.properties.family !== "nogozones") return;
+		if (!e.key.startsWith("Arrow") || e.metaKey || e.ctrlKey || e.altKey || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || !$R || sz.feature($R)?.properties.family !== "nogozones") return;
 		e.preventDefault(), e.stopPropagation();
 		let t = e.shiftKey ? 5 : 1, [n, r] = {
 			ArrowUp: [0, 1],
@@ -41799,27 +42019,27 @@ function tB() {
 			ArrowLeft: [-1, 0],
 			ArrowRight: [1, 0]
 		}[e.key] ?? [0, 0];
-		Nz(n * t, r * t);
+		iB(n * t, r * t);
 	}, !0), document.addEventListener("keydown", (e) => {
-		e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" ? (e.preventDefault(), e.shiftKey ? KR.redo() : KR.undo()) : e.key === "s" ? t("select") : e.key === "n" ? t("nogozones") : e.key === "p" ? t("pathways") : (e.key === "Delete" || e.key === "Backspace") && HR && (KR.remove(HR), HR = null, Oz()));
+		e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" ? (e.preventDefault(), e.shiftKey ? sz.redo() : sz.undo()) : e.key === "s" ? t("select") : e.key === "n" ? t("nogozones") : e.key === "p" ? t("pathways") : (e.key === "Delete" || e.key === "Backspace") && $R && (sz.remove($R), $R = null, Uz()));
 	});
 }
-var nB = ["nogozones", "areas"];
-function rB() {
-	let e = new Blob([JSON.stringify(KR.collection(), null, 2)], { type: "application/geo+json" }), t = document.createElement("a");
+var DB = ["nogozones", "areas"];
+function OB() {
+	let e = new Blob([JSON.stringify(sz.collection(), null, 2)], { type: "application/geo+json" }), t = document.createElement("a");
 	t.href = URL.createObjectURL(e), t.download = `yarbo-map-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 19).replace(/[:T]/g, "-")}.geojson`, t.click(), URL.revokeObjectURL(t.href);
 }
-async function iB(e) {
+async function kB(e) {
 	let t = e.target, n = t.files?.[0];
 	if (t.value = "", n) try {
 		let e = (JSON.parse(await n.text()).features ?? []).filter((e) => e && typeof e.id == "string" && sR.includes(e.properties?.family) && (e.geometry?.type === "Polygon" || e.geometry?.type === "LineString"));
 		if (!e.length) throw Error("no yarbie map objects in that file");
-		KR.replaceAll(e), sB(`Imported ${e.length} objects. Review the changes before applying.`, "ok");
+		sz.replaceAll(e), MB(`Imported ${e.length} objects. Review the changes before applying.`, "ok");
 	} catch (e) {
-		sB(`Import failed: ${oB(e)}`, "error");
+		MB(`Import failed: ${jB(e)}`, "error");
 	}
 }
-function aB(e) {
+function AB(e) {
 	return {
 		areas: "Area",
 		nogozones: "No-go zone",
@@ -41831,10 +42051,10 @@ function aB(e) {
 		dock: "Dock"
 	}[e];
 }
-function oB(e) {
+function jB(e) {
 	return e instanceof t || e instanceof Error ? e.message : String(e);
 }
-function sB(e, t = "") {
+function MB(e, t = "") {
 	let n = Q("message");
 	n.textContent = e, n.className = t;
 }

@@ -326,6 +326,20 @@ export class Editor {
     this.checkpoint();
   }
 
+  /** Replace several outlines at once, as one step to undo. */
+  setGeometries(geometries: Map<string, MapFeature["geometry"]>) {
+    this.sync();
+    for (const [id, geometry] of geometries) {
+      const target = this.all.find((f) => f.id === id);
+      if (!target) continue;
+      target.geometry = geometry;
+      if (this.draw.hasFeature(id)) {
+        this.draw.updateFeatureGeometry(id, shiftGeometry(geometry, this.offset) as GeoJSONStoreFeatures["geometry"]);
+      }
+    }
+    this.checkpoint();
+  }
+
   select(id: string) {
     this.draw.setMode("select");
     if (this.draw.hasFeature(id)) this.draw.selectFeature(id);
