@@ -67,7 +67,10 @@ Where the build differs from the plan below:
   goes through the `yarbie.start_plan` action, open to every user.
 - **The dashboard's reads are open to every user** (TODO 6): the map, area settings,
   runs, progress, wear and the plan list. Writes, route previews (they ask the robot),
-  backups and the imagery list (it carries the Google key) stay admin-only.
+  backups and the imagery list (it carries the Google key) stay admin-only. So that
+  viewers don't each make the robot be asked, other users never force a refresh and get
+  the map, plans and area settings as last read (an admin's change clears the area
+  settings reading), and progress is asked of the robot at most every 5 seconds.
 
 Not done yet:
 
@@ -286,8 +289,8 @@ the current run and the wear map.
 ### Websocket API
 
 Writes, route previews, backups and the imagery list check for an admin user; the reads
-the dashboard cards show (info, map, progress, heatmap, plans, areas, area settings and
-params, runs) are open to every user (TODO 6). Every write records
+the dashboard cards show (info, map, progress, heatmap, plans, areas, area settings,
+runs) are open to every user, who get what was last read (TODO 6). Every write records
 `connection.user.name` as the actor.
 
 | Command | Replaces |
