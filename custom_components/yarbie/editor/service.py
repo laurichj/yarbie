@@ -105,14 +105,20 @@ class MapService:
                     error = f"{op.kind} {op.family} {op.name!r}: {err}"
                     break
                 applied.append(op.public())
-            after = await self.load()
-            return {
+            result: dict[str, Any] = {
                 "applied": applied,
                 "skipped": [o.public() for o in ops if not o.supported],
                 "error": error,
                 "backup": backup.name,
-                "map": after.public(),
+                "map": None,
             }
+            # The changes are on the robot now; a failed read-back must not lose the
+            # record of them (or the backup's name).
+            try:
+                result["map"] = (await self.load()).public()
+            except Exception as err:  # noqa: BLE001 - reported with the result
+                result["reload"] = f"sent, but reading the map back failed ({err}); reload it"
+            return result
 
     async def _send(self, op: diff.Op) -> None:
         robot = self.robot

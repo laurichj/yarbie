@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 import time
 from typing import Any
+import uuid
 
 from ._vendor.yarbo_local.lifecycle import EventKind, LifecycleEvent
 from ._vendor.yarbo_local.models import RobotState
@@ -34,7 +35,8 @@ class RunLog:
     def save(self, entry: dict[str, Any]) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)
         path = self.dir / f"{int(entry['started'])}.json"
-        tmp = path.with_suffix(".tmp")
+        # A name of its own per write, so two saves of one run never share a temp file.
+        tmp = path.with_name(f".{path.stem}.{uuid.uuid4().hex}.tmp")
         tmp.write_text(json.dumps(entry, indent=1, sort_keys=True), encoding="utf-8")
         tmp.replace(path)
 
@@ -84,6 +86,10 @@ class RunRecorder:
     def note_start(self, who: str) -> None:
         """yarbie is about to start a plan on someone's behalf."""
         self._start_request = (time.time(), who)
+
+    def clear_start(self) -> None:
+        """The start was refused or failed: a run that begins now is someone else's."""
+        self._start_request = None
 
     def _started_by(self, at: float) -> str:
         request, self._start_request = self._start_request, None

@@ -179,8 +179,8 @@ async def test_non_admins_are_refused(
 
 
 def test_finished_parts_from_records_and_bare_ids() -> None:
-    from custom_components.yarbie.editor.routes import finished
+    from custom_components.yarbie.editor.runs import finished_parts
 
     records = {"finishIds": [{"id": 4, "move_type": 1, "clean_times": 1}, {"id": 5, "move_type": 0}]}
-    assert finished(records) == {(4, "fill"), (5, "edge")}
-    assert finished({"finishIds": [7]}) == {(7, "fill"), (7, "edge")}
+    assert finished_parts(records) == {4: {"fill": True, "edge": False}, 5: {"fill": False, "edge": True}}
+    assert finished_parts({"finishIds": [7]}) == {7: {"fill": True, "edge": True}}

@@ -102,6 +102,7 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
             int(entry.options.get(OPT_RUN_RETENTION_DAYS, DEFAULT_RETENTION_DAYS)),
         )
         self.recorder = RunRecorder(self._save_run, self._plan_info, self._map_revision)
+        self._run_writes = asyncio.Lock()  # FIFO: run log writes land in the order made
         self.last_run: dict[str, Any] | None = None  # newest run, robot and log joined
         self._unsubs: list[Callable[[], None]] = []
         self._pending_push: CALLBACK_TYPE | None = None
@@ -293,7 +294,17 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
 
     @callback
     def _save_run(self, entry: dict[str, Any]) -> None:
-        self.hass.async_add_executor_job(self.runlog.save, entry)
+        """Queue a write. Saves of one run come in bursts (rain, then a fault, in one
+        frame); one at a time and in order, the last state always lands last. A tracked
+        task, not a background one: HA waits for these when it stops."""
+        self.hass.async_create_task(self._write_run(dict(entry)), f"{DOMAIN} run log write")
+
+    async def _write_run(self, entry: dict[str, Any]) -> None:
+        async with self._run_writes:
+            try:
+                await self.hass.async_add_executor_job(self.runlog.save, entry)
+            except OSError as err:
+                _LOGGER.warning("could not save the run record: %s", err)
 
     def _plan_info(self, plan_id: int | None) -> tuple[str | None, list[int]]:
         plan = next((p for p in self.plans if p.id == plan_id), None)
@@ -321,9 +332,20 @@ class YarbieCoordinator(DataUpdateCoordinator[RobotState]):
         self.async_update_listeners()
 
     async def async_start_plan(self, plan_id: int, context: Context | None) -> None:
-        """Start a plan, noting who asked so the run log can say."""
+        """Start a plan, noting who asked so the run log can say. Refused while a run is
+        under way (running, paused or waiting): a start would replace it."""
+        if self.robot.busy:
+            raise HomeAssistantError(
+                "a plan is already running or paused; resume, stop or dock it first"
+            )
+        # Noted before sending: the robot can report the run as started while start_plan
+        # still waits for it to confirm.
         self.recorder.note_start(await self._who(context))
-        await self.run_control(lambda: self.robot.start_plan(plan_id))
+        try:
+            await self.run_control(lambda: self.robot.start_plan(plan_id))
+        except HomeAssistantError:
+            self.recorder.clear_start()
+            raise
 
     async def _who(self, context: Context | None) -> str:
         if context is None:

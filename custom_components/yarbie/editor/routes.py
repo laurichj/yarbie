@@ -7,6 +7,7 @@ from typing import Any
 from .._vendor.yarbo_local.feedback import PlanFeedback
 from .._vendor.yarbo_local.models import local_to_wgs84
 from .mapdoc import Ref
+from .runs import finished_parts
 
 
 def _lonlat(ref: Ref, points: tuple[tuple[float, float], ...]) -> list[list[float]]:
@@ -17,27 +18,16 @@ def _lonlat(ref: Ref, points: tuple[tuple[float, float], ...]) -> list[list[floa
     return out
 
 
-def finished(raw: dict[str, Any]) -> set[tuple[int | None, str]]:
-    """Parts the robot reports done: move_type 1 ends an area's fill, 0 its edge pass.
-    A bare id (older firmware) means the whole area."""
-    out: set[tuple[int | None, str]] = set()
-    for done in raw.get("finishIds") or []:
-        if isinstance(done, dict) and isinstance(done.get("id"), int):
-            out.add((done["id"], "fill" if done.get("move_type") == 1 else "edge"))
-        elif isinstance(done, int):
-            out |= {(done, "fill"), (done, "edge")}
-    return out
-
-
 def progress(
     feedback: PlanFeedback, raw: dict[str, Any], ref: Ref, plan_names: dict[int, str]
 ) -> dict[str, Any]:
     """The current (or last) run: each area's route split into the part mowed and the rest."""
-    done_parts = finished(raw)
+    # The same reading of finishIds as the run history's, so the two cannot disagree.
+    done_parts = finished_parts(raw)
     paths = []
     for area in feedback.areas:
         kind = "edge" if area.path_type == 1 else "fill"
-        done_all = (area.area_id, kind) in done_parts
+        done_all = area.area_id is not None and done_parts.get(area.area_id, {}).get(kind, False)
         done = area.path if done_all else area.done
         left = () if done_all else area.remaining
         paths.append(

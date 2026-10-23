@@ -308,9 +308,10 @@ async def ws_runs(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
     """Every run, newest first: the robot's records joined with yarbie's own log."""
     c = _coordinator(hass, msg)
     merged = await c.async_runs(msg["refresh"])
+    # Every plan with runs, before filtering: the panel's plan picker is built from this.
+    plans = sorted({(r["plan_id"], r["plan"]) for r in merged if r["plan_id"] is not None}, key=lambda p: str(p[1]))
     if "plan_id" in msg:
         merged = [r for r in merged if r["plan_id"] == msg["plan_id"]]
-    plans = sorted({(r["plan_id"], r["plan"]) for r in merged if r["plan_id"] is not None}, key=lambda p: str(p[1]))
     connection.send_result(
         msg["id"],
         {
@@ -338,7 +339,12 @@ async def ws_run(hass: HomeAssistant, connection: websocket_api.ActiveConnection
 async def ws_route_start(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Start (or join) the robot's route preview for a plan on the current map."""
     c = _coordinator(hass, msg)
-    c.check_controls()  # the preview takes the controller
+    c.check_controls()
+    # The registry has the preview's need for the controller as unknown, so the session's
+    # own mid-plan guard does not apply. If it does take the controller, it would pause
+    # the run, so refuse as map and settings writes do.
+    if c.robot.busy:
+        raise ConflictError("The robot is running or paused in a plan. Stop it first.")
     view = c.service.last if c.service.last and not c.map_stale else await c.service.load()
     plan_id = msg["plan_id"]
 

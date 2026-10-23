@@ -53,7 +53,10 @@ class YarbieMower(YarbieEntity, LawnMowerEntity):
         return ACTIVITY.get(self.coordinator.robot.state.activity)
 
     async def async_start_mowing(self) -> None:
-        """Resume a paused plan, else start the plan chosen in the plan select."""
+        """Resume a paused plan, else start the plan chosen in the plan select.
+
+        HA shows WAITING (a run held up, say by a blocked pathway) as paused, so it offers
+        start; but nothing is paused then, and a start would replace the run."""
         robot = self.coordinator.robot
         if robot.state.activity is Activity.PAUSED:
             await self.coordinator.run_control(robot.resume)
