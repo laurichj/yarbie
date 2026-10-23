@@ -106,14 +106,6 @@ function view(hass: Hass, deviceId: string, robots: number): Card {
     ...(plan ? { entity: plan } : {}),
     grid_options: { columns: 12 },
   });
-  // Schedules beside the plans. The calendar's next event changes when they do.
-  const calendar = found.get("schedules");
-  controls.push({
-    type: "custom:yarbie-schedules-card",
-    ...robot,
-    ...(calendar ? { entity: calendar } : {}),
-    grid_options: { columns: 12 },
-  });
 
   const yard: Card[] = [{ type: "heading", heading: "Yard", heading_style: "title" }];
   if (map) {
@@ -139,6 +131,15 @@ function view(hass: Hass, deviceId: string, robots: number): Card {
     { type: "heading", heading: "Controls", heading_style: "subtitle" },
     ...tiles(hass, found, name, ["beep", "stop", "lights", "refresh_map"]),
   );
+  // Schedules beside the plans' column, which is long enough already. The calendar's next
+  // event changes when they do.
+  const calendar = found.get("schedules");
+  yard.push({
+    type: "custom:yarbie-schedules-card",
+    ...robot,
+    ...(calendar ? { entity: calendar } : {}),
+    grid_options: { columns: 12 },
+  });
 
   const watched = [mower, found.get("plan_event"), found.get("error"), found.get("charging")].filter(
     (e): e is string => Boolean(e),

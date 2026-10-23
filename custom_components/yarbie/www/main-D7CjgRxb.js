@@ -40944,7 +40944,7 @@ function fz() {
 	let e = new Map(NR.map((e) => [e.path, e])), t = MR.filter((e) => FR.has(e.id)), n = rz();
 	return `<div class="area-review">
     <h2>Review: ${t.length} area${t.length === 1 ? "" : "s"}</h2>
-    <ul class="ops">${t.map((t) => `<li><button class="discard" data-drop="${t.id}" title="Discard this area's changes">✕</button>
+    <ul class="area-changes">${t.map((t) => `<li><button class="discard" data-drop="${t.id}" title="Discard this area's changes">✕</button>
           <b>${jR(t.name || `Area ${t.id}`)}</b><ul>${[...FR.get(t.id)].map(([n, r]) => {
 		let i = e.get(n) ?? {
 			...DR,
@@ -41967,7 +41967,7 @@ function zB() {
 	$.getSource("route-areas")?.setData({
 		type: "FeatureCollection",
 		features: n
-	});
+	}), $.getLayer("route-areas") && $.moveLayer("route-areas");
 }
 function BB(e) {
 	return Nz.get(e)?.kind === "computing" ? "Computing…" : Mz === e ? "Hide" : "Route";

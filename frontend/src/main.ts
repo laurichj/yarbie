@@ -1208,6 +1208,7 @@ function drawRouteAreas() {
         .map((f) => ({ type: "Feature", geometry: shiftGeometry(f.geometry, offset), properties: {} }))
     : [];
   (map.getSource("route-areas") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features });
+  if (map.getLayer("route-areas")) map.moveLayer("route-areas"); // above the editor's own outlines
 }
 
 function routeButton(planId: number): string {

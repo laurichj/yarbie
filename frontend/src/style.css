@@ -215,8 +215,8 @@ summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 #area-view > header .hint { margin: 0; }
 #area-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 14px; gap: 10px; }
 #area-view footer { margin-top: 0; border-top: 1px solid var(--line); background: var(--panel); }
-#panel header h1 { margin-right: auto; }
-#panel header #open-area-settings { margin-right: 8px; padding: 3px 8px; }
+#panel header h1 { margin-right: auto; white-space: nowrap; }
+#panel header #open-area-settings { margin-right: 8px; padding: 2px 7px; font-size: 12px; white-space: nowrap; }
 .area-toolbar, .area-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .area-toolbar .hint, .area-actions .hint { margin: 0; }
 .column-picker { position: relative; }
@@ -249,7 +249,10 @@ summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .area-table td.na { color: var(--muted); }
 .differs-count { font-size: 11px; font-weight: normal; color: var(--warn); min-height: 1em; }
 .area-review, .area-results { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: var(--panel); max-height: 40vh; overflow: auto; }
-.area-review ul ul { margin: 2px 0 6px 18px; padding: 0; }
+.area-changes { list-style: none; margin: 0 0 8px; padding: 0; }
+.area-changes > li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.area-changes > li .discard { float: right; padding: 0 6px; }
+.area-changes ul { margin: 2px 0 0 18px; padding: 0; }
 .area-results.ok { border-color: var(--ok); }
 .area-results.error { border-color: var(--danger); }
 .area-results ul { margin: 6px 0 0; padding-left: 18px; }

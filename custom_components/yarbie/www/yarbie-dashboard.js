@@ -63,19 +63,12 @@ function a(e, a, o) {
 		...d ? { entity: d } : {},
 		grid_options: { columns: 12 }
 	});
-	let g = s.get("schedules");
-	p.push({
-		type: "custom:yarbie-schedules-card",
-		...h,
-		...g ? { entity: g } : {},
-		grid_options: { columns: 12 }
-	});
-	let _ = [{
+	let g = [{
 		type: "heading",
 		heading: "Yard",
 		heading_style: "title"
 	}];
-	f && _.push({
+	f && g.push({
 		type: "picture-entity",
 		entity: f,
 		show_name: !1,
@@ -85,7 +78,7 @@ function a(e, a, o) {
 			navigation_path: t
 		},
 		grid_options: { columns: 12 }
-	}), _.push({
+	}), g.push({
 		type: "button",
 		name: "Open Yard editor",
 		icon: "mdi:map-marker-path",
@@ -98,7 +91,7 @@ function a(e, a, o) {
 			columns: 12,
 			rows: 1
 		}
-	}), _.push({
+	}), g.push({
 		type: "heading",
 		heading: "Controls",
 		heading_style: "subtitle"
@@ -108,6 +101,13 @@ function a(e, a, o) {
 		"lights",
 		"refresh_map"
 	]));
+	let _ = s.get("schedules");
+	g.push({
+		type: "custom:yarbie-schedules-card",
+		...h,
+		..._ ? { entity: _ } : {},
+		grid_options: { columns: 12 }
+	});
 	let v = [
 		u,
 		s.get("plan_event"),
@@ -144,7 +144,7 @@ function a(e, a, o) {
 			},
 			{
 				type: "grid",
-				cards: _
+				cards: g
 			},
 			{
 				type: "grid",

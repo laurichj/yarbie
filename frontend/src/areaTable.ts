@@ -341,7 +341,7 @@ function review(): string {
   const why = refusal();
   return `<div class="area-review">
     <h2>Review: ${areas.length} area${areas.length === 1 ? "" : "s"}</h2>
-    <ul class="ops">${areas
+    <ul class="area-changes">${areas
       .map(
         (row) => `<li><button class="discard" data-drop="${row.id}" title="Discard this area's changes">✕</button>
           <b>${esc(row.name || `Area ${row.id}`)}</b><ul>${[...pending.get(row.id)!]
