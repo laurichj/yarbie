@@ -54,7 +54,18 @@ async function a(t, n) {
 		}).catch(n);
 	}) : o(a);
 }
-var o = {
+async function o() {
+	if (!e) return null;
+	let t = await e.callWS({ type: "lovelace/dashboards/list" });
+	for (let n of t.filter((e) => e.mode === "storage")) try {
+		if ((await e.callWS({
+			type: "lovelace/config",
+			url_path: n.url_path
+		})).strategy?.type === "custom:yarbie") return `/${n.url_path}`;
+	} catch {}
+	return null;
+}
+var s = {
 	status: async () => {
 		let e = await i("info");
 		return {
@@ -84,16 +95,7 @@ var o = {
 		refresh: t
 	}),
 	plans: () => i("plans/list"),
-	createPlan: (e, t) => i("plans/save", {
-		name: e,
-		area_ids: t
-	}),
-	updatePlan: (e, t, n) => i("plans/save", {
-		plan_id: e,
-		name: t,
-		area_ids: n
-	}),
-	deletePlan: (e) => i("plans/delete", { plan_id: e }),
+	dashboard: o,
 	route: (e) => a("route/start", { plan_id: e }),
 	mowerParams: (e) => i("area_params/get", { area_id: e }),
 	updateMowerParams: (e, t) => i("area_params/save", {
@@ -112,4 +114,4 @@ var o = {
 	})
 };
 //#endregion
-export { o as n, t as r, r as t };
+export { s as n, t as r, r as t };

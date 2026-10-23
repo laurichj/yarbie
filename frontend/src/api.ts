@@ -246,6 +246,21 @@ interface Info {
   position: Status["position"];
 }
 
+/** The Yarbo dashboard's path (the one built by the yarbie strategy), if one was added. */
+async function yarboDashboard(): Promise<string | null> {
+  if (!hass) return null;
+  const boards = await hass.callWS<{ url_path: string; mode: string }[]>({ type: "lovelace/dashboards/list" });
+  for (const board of boards.filter((b) => b.mode === "storage")) {
+    try {
+      const config = await hass.callWS<{ strategy?: { type?: string } }>({ type: "lovelace/config", url_path: board.url_path });
+      if (config.strategy?.type === "custom:yarbie") return `/${board.url_path}`;
+    } catch {
+      // an empty or broken dashboard: not ours
+    }
+  }
+  return null;
+}
+
 export const api = {
   status: async (): Promise<Status> => {
     const info = await call<Info>("info");
@@ -272,11 +287,7 @@ export const api = {
   progress: () => call<Progress>("progress"),
   heatmap: (days: number, refresh: boolean) => call<Heatmap>("heatmap", { days, refresh }),
   plans: () => call<Plan[]>("plans/list"),
-  createPlan: (name: string, area_ids: number[]) =>
-    call<{ id: number }>("plans/save", { name, area_ids }),
-  updatePlan: (id: number, name: string, area_ids: number[]) =>
-    call<{ id: number }>("plans/save", { plan_id: id, name, area_ids }),
-  deletePlan: (id: number) => call<{ deleted: number }>("plans/delete", { plan_id: id }),
+  dashboard: yarboDashboard,
   route: (id: number) => job<RouteCollection>("route/start", { plan_id: id }),
   mowerParams: (areaId: number) =>
     call<{ params: Record<string, unknown>; editable: string[] }>("area_params/get", {

@@ -114,6 +114,7 @@ let editor: Editor;
 map.on("load", async () => {
   map.addSource("static", { type: "geojson", data: empty });
   map.addSource("route", { type: "geojson", data: empty });
+  map.addSource("route-areas", { type: "geojson", data: empty });
   map.addSource("labels", { type: "geojson", data: empty });
   map.addSource("robot", { type: "geojson", data: empty });
   map.addSource("problems", { type: "geojson", data: empty });
@@ -139,6 +140,12 @@ map.on("load", async () => {
         1, "#b2182b",
       ],
     },
+  });
+  map.addLayer({
+    id: "route-areas",
+    type: "line",
+    source: "route-areas",
+    paint: { "line-color": "#f2cc60", "line-width": 4, "line-opacity": 0.9 },
   });
   map.addLayer({
     id: "route-fill",
@@ -260,6 +267,7 @@ map.on("load", async () => {
     paint: { "line-color": ["match", ["get", "state"], "done", "#3fb950", "edge", "#d29922", "#f85149"], "line-width": 3 },
   });
   await refreshPlans();
+  void linkDashboard();
   await refreshHistory();
   await refreshRuns(false);
   pollStatus();
@@ -1138,10 +1146,9 @@ async function refreshPlans() {
     ? plans
         .map(
           (p) => `<li data-plan="${p.id}" class="${shownRoute === p.id ? "showing" : ""}">
-            <div><b>${esc(p.name)}</b><div class="meta">${p.area_ids.map((a) => esc(areaName(a))).join(", ")}</div>${routeLine(p.id)}</div>
+            <div><b>${esc(p.name)}</b><div class="meta">${p.area_ids.map((a) => esc(areaName(a))).join(" → ")}</div>${routeLine(p.id)}</div>
             <span class="row" style="margin:0">
-              <button data-route="${p.id}" title="${status?.busy && shownRoute !== p.id ? "Not while a plan runs or is paused" : "Show the route the robot would take"}" ${routeStatus.get(p.id)?.kind === "computing" || (status?.busy && shownRoute !== p.id) ? "disabled" : ""}>${routeButton(p.id)}</button>
-              <button data-edit="${p.id}">Edit</button>
+              <button data-route="${p.id}" title="${status?.busy && shownRoute !== p.id ? "Not while a plan runs or is paused" : "Show the route the robot would take, with the plan's areas outlined"}" ${routeStatus.get(p.id)?.kind === "computing" || (status?.busy && shownRoute !== p.id) ? "disabled" : ""}>${routeButton(p.id)}</button>
             </span>
           </li>`,
         )
@@ -1150,9 +1157,41 @@ async function refreshPlans() {
   $("plans").querySelectorAll<HTMLButtonElement>("button[data-route]").forEach((b) =>
     b.addEventListener("click", () => toggleRoute(Number(b.dataset.route))),
   );
-  $("plans").querySelectorAll<HTMLButtonElement>("button[data-edit]").forEach((b) =>
-    b.addEventListener("click", () => editPlan(plans.find((p) => p.id === Number(b.dataset.edit)) ?? null)),
-  );
+  drawRouteAreas();
+}
+
+/** Where plans are edited: the Yarbo dashboard's plan card, found once. */
+async function linkDashboard() {
+  let path: string | null = null;
+  try {
+    path = await api.dashboard();
+  } catch {
+    // listing dashboards failed; say where to add one instead
+  }
+  const hint = $("plans-hint");
+  hint.innerHTML = path
+    ? `Plans are created and edited on the <a href="${esc(path)}" id="plans-link">Yarbo dashboard</a>. Here you can see the route the robot would take.`
+    : `Plans are created and edited with the Yarbo plan card. Add the Yarbo dashboard under Settings, Dashboards, Add dashboard, Yarbo; or add the card “Yarbo plans” to any dashboard.`;
+  $("plans-link")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    // The panel is an iframe: move Home Assistant itself, as its own links do.
+    const top = window.parent;
+    top.history.pushState(null, "", path!);
+    top.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+  });
+}
+
+/** Outline the areas of the plan whose route is shown. */
+function drawRouteAreas() {
+  const plan = plans.find((p) => p.id === shownRoute);
+  const offset = currentOffset();
+  const features: GeoJSON.Feature[] = plan
+    ? editor
+        .features()
+        .filter((f) => f.properties.family === "areas" && f.properties.id !== null && plan.area_ids.includes(f.properties.id))
+        .map((f) => ({ type: "Feature", geometry: shiftGeometry(f.geometry, offset), properties: {} }))
+    : [];
+  (map.getSource("route-areas") as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features });
 }
 
 function routeButton(planId: number): string {
@@ -1224,62 +1263,6 @@ async function showRoute(planId: number) {
   } catch (err) {
     routeStatus.set(planId, { kind: "error", text: `No route: ${message(err)}`, since: Date.now() });
   }
-}
-
-function editPlan(plan: Plan | null) {
-  const box = $("plan-editor");
-  box.hidden = false;
-  const areas = (loaded?.features.features ?? []).filter((f) => f.properties.family === "areas" && f.properties.id !== null);
-  box.innerHTML = `
-    <h2 style="margin-top:12px">${plan ? "Edit plan" : "New plan"}</h2>
-    <label class="field">Name<input type="text" id="plan-name" value="${esc(plan?.name ?? "")}" /></label>
-    ${areas
-      .map(
-        (a) => `<label class="check"><input type="checkbox" data-area="${a.properties.id}"
-          ${plan?.area_ids.includes(a.properties.id!) ? "checked" : ""}/> ${esc(a.properties.name)}</label>`,
-      )
-      .join("")}
-    <div class="row">
-      <button id="plan-save" class="primary">Save to robot</button>
-      ${plan ? `<button id="plan-delete" class="danger">Delete</button>` : ""}
-      <button id="plan-cancel">Cancel</button>
-    </div>
-    ${plan ? `<p class="hint">Deleting a plan also deletes its schedules.</p>` : ""}`;
-  const close = () => {
-    box.hidden = true;
-    box.innerHTML = "";
-  };
-  $("plan-cancel").addEventListener("click", close);
-  $("plan-save").addEventListener("click", async () => {
-    const name = ($("plan-name") as HTMLInputElement).value.trim();
-    const ids = [...box.querySelectorAll<HTMLInputElement>("input[data-area]:checked")].map((i) => Number(i.dataset.area));
-    if (!name || !ids.length) return say("A plan needs a name and at least one area.", "error");
-    try {
-      if (plan) await api.updatePlan(plan.id, name, ids);
-      else await api.createPlan(name, ids);
-      close();
-      say("Plan saved.", "ok");
-      await refreshPlans();
-    } catch (err) {
-      say(message(err), "error");
-    }
-  });
-  $("plan-delete")?.addEventListener("click", async (e) => {
-    const button = e.currentTarget as HTMLButtonElement;
-    if (!button.classList.contains("confirm")) {
-      button.classList.add("confirm");
-      button.textContent = "Confirm delete";
-      return;
-    }
-    try {
-      await api.deletePlan(plan!.id);
-      close();
-      say("Plan deleted.", "ok");
-      await refreshPlans();
-    } catch (err) {
-      say(message(err), "error");
-    }
-  });
 }
 
 // -- status

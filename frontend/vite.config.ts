@@ -8,8 +8,13 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 2000,
     lib: {
-      // The panel, and the dashboard strategy HA loads on every page (kept tiny).
-      entry: { "yarbie-panel": "src/panel.ts", "yarbie-dashboard": "src/dashboard.ts" },
+      // The panel, and the dashboard strategy and its cards that HA loads on every page
+      // (kept small).
+      entry: {
+        "yarbie-panel": "src/panel.ts",
+        "yarbie-dashboard": "src/dashboard.ts",
+        "yarbie-cards": "src/cards.ts",
+      },
       formats: ["es"],
       fileName: (_format, name) => `${name}.js`,
     },

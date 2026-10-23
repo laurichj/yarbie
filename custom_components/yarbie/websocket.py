@@ -273,6 +273,24 @@ async def ws_plan_delete(hass: HomeAssistant, connection: websocket_api.ActiveCo
     connection.send_result(msg["id"], {"deleted": msg["plan_id"]})
 
 
+@_command({probatio.Required("type"): "yarbie/areas/list"})
+async def ws_areas(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The work areas by id and name, for cards that need no geometry."""
+    c = _coordinator(hass, msg)
+    view = c.service.last if c.service.last and not c.map_stale else await c.service.load()
+    areas = [
+        {
+            "id": f["properties"]["id"],
+            "name": f["properties"]["name"],
+            "algorithm_type": f["properties"].get("algorithm_type"),
+            "area_m2": f["properties"].get("area_m2"),
+        }
+        for f in view.public()["features"]["features"]
+        if f["properties"]["family"] == "areas" and f["properties"]["id"] is not None
+    ]
+    connection.send_result(msg["id"], sorted(areas, key=lambda a: a["id"]))
+
+
 @_command({probatio.Required("type"): "yarbie/area_params/get", probatio.Required("area_id"): int})
 async def ws_area_params(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
@@ -393,7 +411,7 @@ def ws_job_subscribe(
 
 COMMANDS = (
     ws_info, ws_map, ws_preview, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
-    ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_area_params,
+    ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_areas, ws_area_params,
     ws_area_params_save, ws_runs, ws_run, ws_route_start, ws_job_get, ws_job_subscribe,
 )
 

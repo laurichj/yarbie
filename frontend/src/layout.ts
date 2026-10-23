@@ -67,8 +67,7 @@ export const LAYOUT = `
         <section>
           <h2>Plans</h2>
           <ul id="plans" class="plans"></ul>
-          <div class="row"><button id="new-plan">New plan</button></div>
-          <div id="plan-editor" hidden></div>
+          <p class="hint" id="plans-hint">Plans are created and edited on the Yarbo dashboard. Here you can see the route the robot would take.</p>
         </section>
 
         <section>

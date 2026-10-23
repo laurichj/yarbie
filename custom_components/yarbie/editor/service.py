@@ -80,6 +80,10 @@ class MapService:
         view = await self.load()
         return diff.compute(view.raw, view.reference, edited)
 
+    def _check_idle(self) -> None:
+        if self.robot.busy:
+            raise ConflictError("The robot is running or paused in a plan. Stop it first.")
+
     async def apply(self, edited: dict[str, Any], revision: str, actor: str | None) -> dict[str, Any]:
         self._check_writes()
         async with self.lock:
@@ -89,8 +93,7 @@ class MapService:
                     "The map on the robot changed since you loaded it (perhaps in the app). "
                     "Reload, then make your edits again."
                 )
-            if self.robot.busy:
-                raise ConflictError("The robot is running or paused in a plan. Stop it first.")
+            self._check_idle()
             ops = diff.compute(view.raw, view.reference, edited)
             todo = [op for op in ops if op.supported]
             if not todo:
@@ -160,16 +163,17 @@ class MapService:
     async def save_plan(self, name: str, area_ids: list[int], plan_id: int | None) -> int:
         self._check_writes()
         async with self.lock:
+            self._check_idle()
             return await self.robot.save_plan(name, area_ids, plan_id)
 
     async def delete_plan(self, plan_id: int) -> None:
         self._check_writes()
         async with self.lock:
+            self._check_idle()
             await self.robot.delete_plan(plan_id)
 
     async def update_mower_area_params(self, area_id: int, changes: dict[str, Any]) -> dict[str, Any]:
         self._check_writes()
         async with self.lock:
-            if self.robot.busy:
-                raise ConflictError("The robot is running or paused in a plan. Stop it first.")
+            self._check_idle()
             return await self.robot.update_mower_area_params(area_id, changes)

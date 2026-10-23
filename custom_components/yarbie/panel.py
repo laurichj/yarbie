@@ -1,4 +1,5 @@
-"""The Yard editor (a sidebar panel) and the Yarbo dashboard strategy, served from ``www/``."""
+"""The Yard editor (a sidebar panel), the Yarbo dashboard strategy and its cards, served
+from ``www/``."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 WWW = Path(__file__).parent / "www"
 MODULE = "yarbie-panel.js"
 DASHBOARD = "yarbie-dashboard.js"
+CARDS = "yarbie-cards.js"  # custom:yarbie-plans-card and the others the strategy places
 URL_BASE = f"/{DOMAIN}_static"
 PANEL_URL = "yard-editor"
 
@@ -32,11 +34,13 @@ async def async_register(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, str(WWW), cache_headers=True)]
     )
-    # Settings > Dashboards > Add dashboard lists it as "Yarbo".
-    dashboard = WWW / DASHBOARD
-    if await hass.async_add_executor_job(dashboard.is_file):
-        version = await hass.async_add_executor_job(_digest, dashboard)
-        frontend.add_extra_js_url(hass, f"{URL_BASE}/{DASHBOARD}?v={version}")
+    # Settings > Dashboards > Add dashboard lists it as "Yarbo". The cards load on every
+    # page too, so any dashboard can use them.
+    for name in (DASHBOARD, CARDS):
+        path = WWW / name
+        if await hass.async_add_executor_job(path.is_file):
+            version = await hass.async_add_executor_job(_digest, path)
+            frontend.add_extra_js_url(hass, f"{URL_BASE}/{name}?v={version}")
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL,
