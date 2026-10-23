@@ -497,6 +497,64 @@ not known. The app sent 3, 1 and 2.
 - **Rain:** whether to skip a scheduled run when it is raining, as an option, which needs
   the rain-pause blueprint's logic at start time.
 
+### 6. Keep the Yard editor to editing the map
+
+Builds on #5 (plan and schedule cards, and TODO 5: the Area settings table), which
+adds the cards and the view this moves.
+
+The Yard editor should hold only what it takes to edit the map: zones, pathways,
+sidewalks, area shapes and names, the change list and apply, map backups, imagery and
+its alignment. Everything else moves to the Yarbo dashboard, where the robot's other
+controls already are. Plans moved there in TODO 3; this does the same for the rest.
+
+**Moves to the dashboard:**
+- **Area settings** (the TODO 5 table). It becomes a full-width dashboard view, "Area
+  settings": a `panel` view the strategy adds, holding a `custom:yarbie-area-settings-card`
+  built from `areaTable.ts`. It uses the same `yarbie/area_settings/*` commands, rails and
+  backups.
+  - **Who can use it:** dashboards are seen by non-admins, while settings writes stay
+    admin-only. For non-admins the card shows the table read-only, and the writes still
+    refuse them.
+- **The single-area mowing settings form** (the Areas tab's pattern, cutting height,
+  passes, speed). These are settings, not map geometry: they belong in the same view,
+  with one area picked.
+- **Runs** (TODO 1): the run list, its plan filter and a run's timeline become a
+  `custom:yarbie-runs-card` in the dashboard's Recent column, next to the logbook.
+  - The run's areas, shaded by what was finished, can't go on the editor's map once it's
+    gone from there. They're drawn on a dashboard map (below).
+
+**A read-only map card for what is shown, not edited.** The editor's map also hosts views
+that edit nothing:
+- a past run's areas
+- the route preview
+- the current run's progress
+- the wear heatmap
+
+These go to one `custom:yarbie-yard-card` on the dashboard: MapLibre with the same
+imagery and alignment, no drawing tools, and layers picked by what you asked to see. It
+takes the place of the map image on the dashboard. It also lets the editor stop polling
+run progress, and stop following route-preview and heatmap jobs.
+
+**What the editor keeps:**
+- the drawing tools
+- the Selected and Changes sections
+- History (map backups) and imagery alignment
+- area names and shapes; an area's mowing settings are a link to the dashboard view
+
+The Plans and Areas sections, the Runs list, the wear heatmap, the route preview and the
+current-run overlay all leave. The header loses the Map / Area settings switch.
+
+**Things to settle while doing it:**
+- **Links from HA to the right place:** the editor's "area settings for this area", and
+  the device page's plan and run entities, should open the dashboard view with that area
+  or run selected. The cards read a hash or query parameter for this.
+- **The `image` entity:** it stays for other dashboards and for automations; only the
+  Yarbo dashboard swaps it for the yard card.
+- **Code layout:** `main.ts` gets smaller. The cards share map drawing (layers, imagery,
+  alignment) with the editor through a module both bundles import, not a copy. The cards
+  bundle stays loaded on every page, so the MapLibre part loads only when a yard card is
+  on screen.
+
 ## Appendix: delta against markus-lassfolk's integration (mower only)
 
 - **Same:**
