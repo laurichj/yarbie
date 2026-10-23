@@ -14,7 +14,9 @@ import {
   defineCard,
   errorText,
   esc,
+  loadRun,
   queryParam,
+  setQueryParam,
   type CardConfig,
   type CardHass,
   type RunShown,
@@ -23,6 +25,7 @@ import type { YardView } from "./yardView";
 
 interface YardConfig extends CardConfig {
   tracker?: string; // the robot's device_tracker: where to draw it
+  map?: string; // the robot's map image entity: its state changes when the map does
 }
 
 interface Job<T> {
@@ -39,6 +42,8 @@ class YarbieYardCard extends YarbieCard {
   #view: YardView | null = null;
   #viewLoading = false;
   #visible: IntersectionObserver | null = null;
+  #resize: ResizeObserver | null = null;
+  #mapState: string | undefined;
   #built = false;
   #yard: MapResponse | null = null;
   #loadError: string | null = null;
@@ -51,6 +56,7 @@ class YarbieYardCard extends YarbieCard {
   #heatDays = 0;
   #heat: Heatmap | null = null;
   #heatInfo = "";
+  #heatAsked = 0; // bumped by every request, so an older, slower reply is dropped
   #routePlan: number | null = null;
   #routeShown: number | null = null;
   #routeStatus: { kind: "computing" | "ok" | "error"; text: string; since: number } | null = null;
@@ -63,7 +69,12 @@ class YarbieYardCard extends YarbieCard {
   }
 
   set hass(hass: CardHass) {
+    const first = !this.hassObj;
     super.hass = hass;
+    // The map changed (an apply, the app, a refresh): read it again.
+    const mapState = this.config.map ? hass.states[this.config.map]?.state : undefined;
+    if (!first && mapState !== this.#mapState) void this.#loadYard();
+    this.#mapState = mapState;
     const tracker = this.config.tracker ? hass.states[this.config.tracker] : undefined;
     const lat = Number(tracker?.attributes.latitude);
     const lon = Number(tracker?.attributes.longitude);
@@ -91,6 +102,13 @@ class YarbieYardCard extends YarbieCard {
     this.#visible?.disconnect();
     window.clearTimeout(this.#runTimer);
     this.#runTimer = undefined;
+    window.clearInterval(this.#routeTicker);
+    // Free the map and its WebGL context; it is built again if the card comes back.
+    this.#resize?.disconnect();
+    this.#resize = null;
+    this.#view?.remove();
+    this.#view = null;
+    this.#built = false;
   }
 
   getCardSize() {
@@ -102,17 +120,20 @@ class YarbieYardCard extends YarbieCard {
   }
 
   protected async load() {
+    this.#plans = await this.ws<Plan[]>("plans/list").catch(() => []);
+    await this.#loadYard();
+    await this.refreshWrites();
+    this.#follow();
+  }
+
+  async #loadYard() {
     try {
-      const [yard, plans] = await Promise.all([this.ws<MapResponse>("map"), this.ws<Plan[]>("plans/list").catch(() => [])]);
-      this.#yard = yard;
-      this.#plans = plans;
+      this.#yard = await this.ws<MapResponse>("map");
       this.#loadError = null;
-      this.#view?.setYard(yard);
+      this.#view?.setYard(this.#yard);
     } catch (err) {
       this.#loadError = errorText(err);
     }
-    await this.refreshWrites();
-    this.#follow();
   }
 
   // -- the map, loaded on first sight
@@ -124,13 +145,15 @@ class YarbieYardCard extends YarbieCard {
     const root = this.shadowRoot!;
     try {
       const { YardView, MAP_CSS } = await import("./yardView");
+      if (!this.isConnected || !this.#built) return; // taken off the page meanwhile
       const style = document.createElement("style");
       style.textContent = MAP_CSS;
       root.prepend(style);
       const container = root.querySelector<HTMLElement>(".map")!;
       const view = new YardView(container);
       this.#view = view;
-      new ResizeObserver(() => view.resize()).observe(container);
+      this.#resize = new ResizeObserver(() => view.resize());
+      this.#resize.observe(container);
       root.querySelector(".map-note")?.remove();
     } catch (err) {
       root.querySelector(".map-note")!.textContent = `The map could not load: ${errorText(err)}`;
@@ -138,6 +161,7 @@ class YarbieYardCard extends YarbieCard {
     } finally {
       this.#viewLoading = false;
     }
+    if (this.hassObj) this.render(); // the controls, after a rebuild
     if (this.#yard) this.#view.setYard(this.#yard);
     if (this.hassObj) this.hass = this.hassObj; // the robot's position
     this.#view.setRun(this.#runOn ? this.#run : null);
@@ -147,7 +171,7 @@ class YarbieYardCard extends YarbieCard {
       // Google satellite needs the key from the integration's options: admins only.
       try {
         const extra = await this.ws<{ sources: Imagery[] }>("imagery");
-        this.#view.addImagery(extra.sources);
+        this.#view?.addImagery(extra.sources);
       } catch {
         // the free photos still show
       }
@@ -197,7 +221,7 @@ class YarbieYardCard extends YarbieCard {
           ]
             .map(([v, label]) => `<option value="${v}" ${v === this.#heatDays ? "selected" : ""}>${label}</option>`)
             .join("")}</select>
-          <button class="icon" id="heat-refresh" title="Read the run history from the robot again">↻</button>
+          ${admin ? `<button class="icon" id="heat-refresh" title="Read the run history from the robot again">↻</button>` : ""}
         </div>
         ${this.#heatOn ? `<div class="info">${this.#heatInfo}</div>` : ""}
       </div>
@@ -257,7 +281,15 @@ class YarbieYardCard extends YarbieCard {
       this.render();
     });
     on("route", "click", () => void this.#toggleRoute());
-    on("past-clear", "click", () => this.#showPast(null));
+    on("past-clear", "click", () => {
+      // Out of the address too, so following the same link again shows it again; the
+      // runs card closes it as well.
+      setQueryParam("run", null);
+      this.#linkedRun = null;
+      window.dispatchEvent(
+        new CustomEvent<RunShown>(RUN_EVENT, { detail: { entry_id: this.config.entry_id ?? null, run: null } }),
+      );
+    });
     on("fit", "click", () => this.#view?.fit());
     on("editor", "click", () => this.navigate("/yard-editor"));
   }
@@ -322,20 +354,25 @@ class YarbieYardCard extends YarbieCard {
 
   async #loadHeat(refresh: boolean) {
     if (!this.#heatOn) {
+      this.#heatAsked++;
       this.#view?.setHeat(null);
       this.render();
       return;
     }
     this.#heatInfo = "Reading the robot's run history…";
     this.render();
+    const asked = ++this.#heatAsked;
+    let heat: Heatmap;
     try {
-      this.#heat = await this.ws<Heatmap>("heatmap", { days: this.#heatDays, refresh });
+      heat = await this.ws<Heatmap>("heatmap", { days: this.#heatDays, refresh });
     } catch (err) {
+      if (asked !== this.#heatAsked) return;
       this.#heatInfo = `No heat map: ${esc(errorText(err))}`;
       this.render();
       return;
     }
-    const heat = this.#heat;
+    if (asked !== this.#heatAsked) return; // a newer request went out meanwhile
+    this.#heat = heat;
     const day = (t: number | null) => (t ? new Date(t * 1000).toLocaleDateString(undefined, { dateStyle: "medium" }) : "?");
     this.#heatInfo = heat.runs
       ? `<div class="scale"></div>
@@ -438,23 +475,24 @@ class YarbieYardCard extends YarbieCard {
   #onRun = (e: Event) => {
     const { entry_id, run } = (e as CustomEvent<RunShown>).detail;
     if ((entry_id ?? null) !== (this.config.entry_id ?? null)) return;
+    this.#linkedRun = queryParam("run"); // the runs card keeps the address up to date
     this.#showPast(run);
   };
 
-  /** ?run=<key> (``last``: the newest that ended) shows that run's areas. */
+  /** ?run=<key> (``last``: the newest that ended) shows that run's areas. Read through
+   * loadRun, so a runs card on the same page following the same link asks only once. */
   #follow = () => {
     const key = queryParam("run");
     if (key === this.#linkedRun || !this.hassObj) return;
     this.#linkedRun = key;
-    if (!key) return;
+    if (!key) {
+      if (this.#past) this.#showPast(null); // the address no longer names it
+      return;
+    }
     void (async () => {
       try {
-        let found = key;
-        if (key === "last") {
-          const { runs } = await this.ws<{ runs: Run[] }>("runs/list", { limit: 5 });
-          found = runs.find((r) => r.outcome !== "running")?.key ?? "";
-        }
-        if (found) this.#showPast(await this.ws<Run>("runs/get", { key: found }));
+        const run = await loadRun((type, data) => this.ws(type, data), this.config.entry_id, key);
+        if (run) this.#showPast(run);
       } catch (err) {
         this.say(`Cannot show that run: ${errorText(err)}`, "error");
       }

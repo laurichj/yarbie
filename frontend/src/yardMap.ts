@@ -116,16 +116,17 @@ export class YardImagery {
     return metresToOffset(this.metres[0], this.metres[1], this.lat);
   }
 
-  /** Sources that need a key on the server (Google), just above the other photos. */
+  /** Sources that need a key on the server (Google), just above the other photos. Only
+   * once the map's style has loaded; offered for choosing only once added. */
   add(source: Imagery) {
     if (this.sources.some((i) => i.id === source.id)) return;
-    this.sources.push(source);
     this.map.addSource(source.id, rasterSource(source));
     const firstShape = this.map.getStyle().layers.find((l) => !l.id.startsWith("imagery-"))?.id;
     this.map.addLayer(
       { id: `imagery-${source.id}`, type: "raster", source: source.id, layout: { visibility: "none" } },
       firstShape,
     );
+    this.sources.push(source);
   }
 
   /** The sharpest source that covers the yard, for when none has been picked. */

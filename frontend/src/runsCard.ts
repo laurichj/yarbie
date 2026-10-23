@@ -4,7 +4,17 @@
 // in the address select them, so entities and notifications can link here.
 
 import type { Run } from "./api";
-import { RUN_EVENT, YarbieCard, defineCard, errorText, esc, queryParam, setQueryParam, type RunShown } from "./cardBase";
+import {
+  RUN_EVENT,
+  YarbieCard,
+  defineCard,
+  errorText,
+  esc,
+  loadRun,
+  queryParam,
+  setQueryParam,
+  type RunShown,
+} from "./cardBase";
 
 const OUTCOMES: Record<string, string> = {
   completed: "Completed",
@@ -48,24 +58,43 @@ class YarbieRunsCard extends YarbieCard {
 
   connectedCallback() {
     window.addEventListener("location-changed", this.#follow);
+    window.addEventListener(RUN_EVENT, this.#onRun);
     if (this.hassObj) this.#follow();
   }
 
   disconnectedCallback() {
     window.removeEventListener("location-changed", this.#follow);
+    window.removeEventListener(RUN_EVENT, this.#onRun);
   }
 
-  /** ?plan= filters the list; ?run= opens that run (``last``: the newest that ended). */
+  /** The ?run= and ?plan= in the address now. */
+  #address(): string {
+    return `${queryParam("run")}|${queryParam("plan")}`;
+  }
+
+  /** ?plan= filters the list; ?run= opens that run (``last``: the newest that ended).
+   * Followed when they differ from what the card last showed, so following the same
+   * link again after hiding the run opens it again. */
   #follow = () => {
-    const run = queryParam("run");
-    const plan = queryParam("plan");
-    const linked = `${run}|${plan}`;
+    const linked = this.#address();
     if (linked === this.#linked) return;
     this.#linked = linked;
-    if (plan !== null && Number.isFinite(Number(plan))) this.#plan = Number(plan);
+    const run = queryParam("run");
+    const plan = queryParam("plan") ?? "";
+    this.#plan = /^\d+$/.test(plan) ? Number(plan) : null;
     void this.load().then(() => {
-      if (run) void this.#show(run === "last" ? (this.#list?.runs.find((r) => r.outcome !== "running")?.key ?? null) : run);
+      if (run && run !== this.#shown?.key) void this.#show(run);
+      else if (!run && this.#shown) void this.#show(null); // the address no longer names it
     });
+  };
+
+  /** The yard card stopped showing the run: close it here too. */
+  #onRun = (e: Event) => {
+    const { entry_id, run } = (e as CustomEvent<RunShown>).detail;
+    if (run !== null || (entry_id ?? null) !== (this.config.entry_id ?? null) || !this.#shown) return;
+    this.#shown = null;
+    this.#linked = this.#address();
+    this.render();
   };
 
   protected editing() {
@@ -121,7 +150,7 @@ class YarbieRunsCard extends YarbieCard {
           <select id="plan"><option value="">All plans</option>${plans
             .map((p) => `<option value="${p.id}" ${p.id === this.#plan ? "selected" : ""}>${esc(p.name)}</option>`)
             .join("")}</select>
-          <button data-refresh title="Read the run history from the robot again">↻</button>
+          ${this.isAdmin ? `<button data-refresh title="Read the run history from the robot again">↻</button>` : ""}
         </div>
         <ul class="list runs">${rows.join("") || `<li class="meta">No runs yet.</li>`}</ul>
         ${runs.length > this.#limit ? `<div class="row"><button data-more>Show more (${runs.length - this.#limit})</button></div>` : ""}`;
@@ -174,6 +203,7 @@ class YarbieRunsCard extends YarbieCard {
       this.#plan = v ? Number(v) : null;
       this.#limit = PAGE;
       setQueryParam("plan", v || null);
+      this.#linked = this.#address();
       void this.load();
     });
     root.querySelector("button[data-refresh]")?.addEventListener("click", () => void this.load(true));
@@ -191,16 +221,18 @@ class YarbieRunsCard extends YarbieCard {
       this.#shown = null;
     } else {
       try {
-        this.#shown = await this.ws<Run>("runs/get", { key });
-        // A linked run further down the list than it shows.
-        const at = this.#list?.runs.findIndex((r) => r.key === key) ?? -1;
-        if (at >= this.#limit) this.#limit = at + 1;
+        this.#shown = await loadRun((type, data) => this.ws(type, data), this.config.entry_id, key);
       } catch (err) {
         this.say(`Cannot show that run: ${errorText(err)}`, "error");
         return;
       }
+      if (!this.#shown) return this.say("No run has ended yet.");
+      // A linked run further down the list than it shows.
+      const at = this.#list?.runs.findIndex((r) => r.key === this.#shown!.key) ?? -1;
+      if (at >= this.#limit) this.#limit = at + 1;
     }
-    setQueryParam("run", key);
+    setQueryParam("run", this.#shown?.key ?? null);
+    this.#linked = this.#address();
     window.dispatchEvent(
       new CustomEvent<RunShown>(RUN_EVENT, { detail: { entry_id: this.config.entry_id ?? null, run: this.#shown } }),
     );

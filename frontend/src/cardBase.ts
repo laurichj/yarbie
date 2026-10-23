@@ -200,6 +200,34 @@ export interface RunShown {
   run: Run | null;
 }
 
+// Runs being read, shared by the cards: a ?run= link opens the run on the runs card and the
+// yard card at once, and they should not each ask for it.
+const runsRead = new Map<string, Promise<Run | null>>();
+
+/** A run in full by key (``last``: the newest that ended), or null if there is none. */
+export function loadRun(
+  ws: <T>(type: string, data?: Record<string, unknown>) => Promise<T>,
+  entryId: string | undefined,
+  key: string,
+): Promise<Run | null> {
+  const id = `${entryId ?? ""}|${key}`;
+  let read = runsRead.get(id);
+  if (!read) {
+    read = (async () => {
+      let found: string | undefined = key;
+      if (key === "last") {
+        const { runs } = await ws<{ runs: Run[] }>("runs/list", { limit: 5 });
+        found = runs.find((r) => r.outcome !== "running")?.key;
+      }
+      return found ? await ws<Run>("runs/get", { key: found }) : null;
+    })();
+    runsRead.set(id, read);
+    const forget = () => window.setTimeout(() => runsRead.delete(id), 5000);
+    read.then(forget, forget);
+  }
+  return read;
+}
+
 export function errorText(err: unknown): string {
   if (err instanceof CardError && err.code === "unauthorized") return "Only administrators can change this.";
   return err instanceof Error ? err.message : String(err);

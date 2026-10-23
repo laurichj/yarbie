@@ -40,6 +40,7 @@ export class YardView {
   #heat: Heatmap | null = null;
   #past: Record<string, string> | null = null;
   #fitted = false;
+  #imagery: Imagery[] = []; // keyed sources that came before the map had loaded
 
   constructor(container: HTMLElement) {
     this.map = createMap(container);
@@ -55,12 +56,17 @@ export class YardView {
       addRobotLayer(this.map);
       addLabelLayer(this.map);
       this.#loaded = true;
+      for (const source of this.#imagery) this.imagery.add(source);
       this.#draw();
     });
   }
 
   /** Photo sources that need a key (Google): only admins are given them. */
   addImagery(sources: Imagery[]) {
+    if (!this.#loaded) {
+      this.#imagery.push(...sources); // added on load
+      return;
+    }
     for (const source of sources) this.imagery.add(source);
     if (this.#yard) this.#draw();
   }

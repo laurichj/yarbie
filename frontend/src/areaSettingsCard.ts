@@ -130,6 +130,9 @@ class YarbieAreaSettingsCard extends YarbieCard {
     root.querySelectorAll<HTMLButtonElement>("button[data-mode]").forEach((b) =>
       b.addEventListener("click", () => {
         this.#mode = b.dataset.mode as "table" | "one";
+        // The form is drawn again from the robot's values: drop what it had not sent.
+        this.#changes = {};
+        this.#pattern = null;
         this.render();
       }),
     );
