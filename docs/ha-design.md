@@ -1,44 +1,24 @@
 # yarbie as a Home Assistant integration
 
-Status: being built · 2026-10-22 · replaces `remote-design.md` (GCP), which is no longer pursued.
+Status: built and checked against the simulator in a local HA 2026.10.2; the migration
+on the real robot is still to do. Updated 2026-10-23.
 
 ## Implementation status
 
-Done on branch `ha-integration` (phases 0–6, checked in a local HA 2026.10.2 with the
-simulator):
+Built (PRs #1 to #9):
 
-- Baseline commit; yarbo-local vendored.
-- The integration: config flow, coordinator, all platforms in the entity table, actions,
+- The integration: config flow, coordinator, the platforms in the entity table, actions,
   diagnostics, the firmware repair, the kill switch and observe-only mode.
-- The editor's websocket API and jobs.
-- The panel.
+- The Yard editor panel, and its websocket API and jobs.
 - The map image entity, blueprints, HACS manifest, `scripts/dev_ha.sh`.
-- The Yarbo dashboard strategy (Settings, Dashboards, Add dashboard, Yarbo).
-- The run history (TODO 1):
-  - the robot's records joined with yarbie's run log in `/config/yarbie/runs`
-  - the panel's Runs section
-  - last-run sensors
-  - a retention option
+- The Yarbo dashboard strategy (Settings, Dashboards, Add dashboard, Yarbo) and its
+  cards.
+- The run history (TODO 1), plan cards (TODO 3), the schedule editor (TODO 4, but its
+  step 1 is open), Area settings (TODO 5), the editor kept to editing the map (TODO 6),
+  and CI and releases (TODO 7).
+- Outline smoothing (`area-smoothing.md`).
 
-Done on branch `feature/plans-schedules-areas` (checked with the simulator):
-
-- Plan editing moved to the dashboard (TODO 3): `custom:yarbie-plans-card`.
-- The schedule editor, built (TODO 4): websocket commands, a switch per schedule, a
-  Schedules calendar and `custom:yarbie-schedules-card`. What the robot's schedule
-  numbers mean is still unconfirmed; step 1 of TODO 4 (captures from the app) is open.
-- The Area settings view (TODO 5): a table of every area's settings, set in bulk.
-
-Done on branch `build-release`:
-
-- The build and release process (TODO 7): CI on every push and PR, releases from
-  `vX.Y.Z` tags with `yarbie.zip` for HACS, and `www/` no longer in git.
-
-Done on branch `editor-scope` (checked with the simulator):
-
-- The Yard editor keeps to editing the map (TODO 6). Area settings, runs, the route
-  preview, the current run and the wear map moved to the Yarbo dashboard's cards.
-
-Where the build differs from the plan below:
+Where the build differs from the design below:
 
 - **Vendoring layout.** The subtree holds the whole upstream repo at
   `third_party/yarbo-local`. `scripts/vendor_yarbo_local.py` copies the package and its
@@ -77,13 +57,23 @@ Where the build differs from the plan below:
   the map, plans and area settings as last read (an admin's change clears the area
   settings reading), and progress is asked of the robot at most every 5 seconds.
 
+- **One light, not eight.** `light_ctrl` sets every channel together, so there is one
+  light for all seven and no per-channel entities. `yarbie.set_lights` still takes
+  levels per channel.
+- **The simulator is an address**, not a hidden option: typing `simulator` as the host
+  in the config flow runs the demo yard.
+- **No logbook entries.** An apply or an Area settings change sends a persistent
+  notification and fires `yarbie_map_changed` or `yarbie_area_settings_changed`; nothing
+  describes those events to the logbook.
+
 Not done yet:
 
-- Phase 7 (migration on the real robot). Phase 8 (removing `backend/` and the Docker
-  files) was done ahead of it, before merging.
+- The migration on the real robot (below).
 - The panel's phone layout and HA theme colours.
 - Entity icons.
 - The error sensor as an enum with translated fault names.
+- A "robot not found" repair with a rescan fix. Today setup scans for the robot by
+  serial when it is not at its stored address, and HA retries setup until it is found.
 - The run history shows past runs on today's map. Only the map revision is kept, not a
   copy of the map as it was.
 
