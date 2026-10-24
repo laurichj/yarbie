@@ -148,24 +148,13 @@ async def test_area_rename(ws: WS) -> None:
     assert any(f["properties"]["name"] == "Front" for f in result["map"]["features"]["features"])
 
 
-async def test_plans_and_params(hass: HomeAssistant, ws: WS) -> None:
+async def test_plans(hass: HomeAssistant, ws: WS) -> None:
     plans = (await ws("yarbie/plans/list"))["result"]
     assert [p["name"] for p in plans] == ["Whole yard", "Front only"]
     created = (await ws("yarbie/plans/save", name="Back only", area_ids=[2]))["result"]
     assert any(p["id"] == created["id"] for p in (await ws("yarbie/plans/list"))["result"])
     await hass.async_block_till_done()
     assert "Back only" in state(hass, "select.yarbo_plan").attributes["options"]
-
-    params = (await ws("yarbie/area_params/get", area_id=1))["result"]
-    assert params["params"]["first_clean_params"]["blade_height"] == 50
-    saved = await ws(
-        "yarbie/area_params/save", area_id=1, changes={"first_clean_params": {"blade_height": 60}}
-    )
-    assert saved["success"], saved
-    again = (await ws("yarbie/area_params/get", area_id=1))["result"]
-    assert again["params"]["first_clean_params"]["blade_height"] == 60
-    bogus = await ws("yarbie/area_params/save", area_id=1, changes={"bogus": 1})
-    assert bogus["error"]["code"] == "invalid"
 
 
 async def test_route_preview_is_one_job(ws: WS, entry: MockConfigEntry) -> None:
@@ -230,8 +219,6 @@ async def test_non_admins_read_but_never_write(
         ("yarbie/apply", {"features": body["features"], "revision": body["revision"]}),
         ("yarbie/preview", {"features": body["features"]}),
         ("yarbie/area_settings/apply", {"changes": [{"area_id": area, "params": {"edge_circles": 2}}]}),
-        ("yarbie/area_params/get", {"area_id": area}),
-        ("yarbie/area_params/save", {"area_id": area, "changes": {"edge_circles": 2}}),
         ("yarbie/plans/save", {"name": "x", "area_ids": [area]}),
         ("yarbie/route/start", {"plan_id": 1}),
         ("yarbie/imagery", {}),
