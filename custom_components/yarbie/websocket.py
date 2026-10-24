@@ -220,12 +220,6 @@ def _announce(hass: HomeAssistant, c: YarbieCoordinator, actor: str, result: dic
     c.async_update_listeners()
 
 
-@_command({probatio.Required("type"): "yarbie/export"})
-async def ws_export(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    view = await _coordinator(hass, msg).service.load()
-    connection.send_result(msg["id"], view.public()["features"])
-
-
 @_command({probatio.Required("type"): "yarbie/backups/list"})
 async def ws_backups(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     c = _coordinator(hass, msg)
@@ -562,14 +556,6 @@ async def ws_route_start(hass: HomeAssistant, connection: websocket_api.ActiveCo
     connection.send_result(msg["id"], job.public())
 
 
-@_command({probatio.Required("type"): "yarbie/job/get", probatio.Required("job_id"): str})
-async def ws_job_get(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    job = _coordinator(hass, msg).jobs.get(msg["job_id"])
-    if job is None:
-        raise LookupError("no such job")
-    connection.send_result(msg["id"], job.public())
-
-
 @websocket_api.websocket_command(
     {probatio.Required("type"): "yarbie/job/subscribe", probatio.Required("job_id"): str, ENTRY: str}
 )
@@ -598,10 +584,10 @@ def ws_job_subscribe(
 
 
 COMMANDS = (
-    ws_info, ws_map, ws_preview, ws_smooth, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
+    ws_info, ws_map, ws_preview, ws_smooth, ws_apply, ws_backups, ws_backup, ws_imagery,
     ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_schedules,
     ws_schedule_save, ws_schedule_delete, ws_areas, ws_area_params, ws_area_params_save,
-    ws_area_settings, ws_area_settings_apply, ws_runs, ws_run, ws_route_start, ws_job_get,
+    ws_area_settings, ws_area_settings_apply, ws_runs, ws_run, ws_route_start,
     ws_job_subscribe,
 )
 
