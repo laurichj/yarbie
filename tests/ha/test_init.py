@@ -75,7 +75,8 @@ async def test_untested_firmware_turns_writes_off(hass: HomeAssistant, entry: Mo
     coordinator.check_firmware()
     assert not coordinator.writable
     issue = ir.async_get(hass).async_get_issue("yarbie", f"untested_firmware_{entry.entry_id}")
-    assert issue is not None and issue.translation_placeholders["firmware"] == "9.9.9"
+    assert issue is not None and issue.translation_placeholders is not None
+    assert issue.translation_placeholders["firmware"] == "9.9.9"
 
 
 async def test_unload(hass: HomeAssistant, entry: MockConfigEntry) -> None:
