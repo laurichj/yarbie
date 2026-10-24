@@ -536,11 +536,10 @@ not known. The app sent 3, 1 and 2.
 Asked for: "something like a spreadsheet where I can set a subset of area configuration
 options to all or some areas at the same time in order to easily keep them in sync."
 
-Built on `feature/plans-schedules-areas` as the **Area settings** view of the Yard
-editor (`frontend/src/areaTable.ts`): a header button switches between the map and it,
-and an area's details in the map view link to it. It lives in the panel rather than a
-card because the panel is admin-only, like every settings write, and has the width a
-table of 30 columns needs.
+Built as a table (`frontend/src/areaTable.ts`), first in the Yard editor and since TODO 6
+on the Yarbo dashboard's full-width **Area settings** view, in
+`custom:yarbie-area-settings-card`. The editor's area details link to it. Non-admins see
+it read-only; the writes refuse them.
 
 - **Rows** are the work areas; **columns** their mowing pattern (`algorithm_type`, an
   area record field, written with `update_area`) and the mower area parameters
@@ -575,7 +574,10 @@ table of 30 columns needs.
   
 ### 6. Keep the Yard editor to editing the map (done)
 
-Built on `editor-scope`, checked in a local HA 2026.10.2 with the simulator:
+The Yard editor holds only what it takes to edit the map: zones, pathways, sidewalks,
+area shapes and names, the change list and apply, map backups, imagery and its
+alignment. Everything else is on the Yarbo dashboard, where the robot's other controls
+are. Built and checked in a local HA 2026.10.2 with the simulator:
 - **Area settings** is the dashboard's "Area settings" view: a `panel` view the strategy
   adds per robot (`area-settings`, or `<device id>-area-settings` with several robots),
   holding `custom:yarbie-area-settings-card` (`areaSettingsCard.ts`). `areaTable.ts` is now
@@ -600,8 +602,9 @@ Where it differs from the plan:
 - **Reads opened to every user.** Dashboards are seen by non-admins, so the commands the
   cards read with no longer require an admin (see the websocket API above). The imagery
   list does, since its tile URL carries the Google key: non-admins see the free photos.
-- **The single-area form sends through `yarbie/area_settings/apply`**, not
-  `area_params/save`, so it gets the same rails, backup and notification as the table.
+- **The single-area form sends through `yarbie/area_settings/apply`**, so it gets the
+  same rails, backup and notification as the table. (The per-area
+  `yarbie/area_params/*` commands it used before were then removed.)
   It also sets the mowing pattern; the editor's Selected no longer has a pattern picker
   (the change list still sends a pattern from an imported map).
 - **Links:** `?area=<id>` (Area settings view), `?run=<key>` or `?run=last`, and
@@ -612,111 +615,28 @@ Where it differs from the plan:
 - The cards talk to each other with a window event (`yarbie-run-shown`): picking a run
   on the runs card shades it on the yard card.
 
-The plan as written:
+### 7. A build and release process (done)
 
-Builds on #5 (plan and schedule cards, and TODO 5: the Area settings table), which
-adds the cards and the view this moves.
+The built panel used to be committed, because HACS installed the repository as it stood
+and Home Assistant never runs `npm`. Every rebuild added another ~1.5 MB bundle to the
+history, any two branches that rebuilt conflicted in `www/`, nothing checked the bundle
+matched `frontend/src`, and there was no CI to catch a file missing from git.
 
-The Yard editor should hold only what it takes to edit the map: zones, pathways,
-sidewalks, area shapes and names, the change list and apply, map backups, imagery and
-its alignment. Everything else moves to the Yarbo dashboard, where the robot's other
-controls already are. Plans moved there in TODO 3; this does the same for the rest.
+Now (README, Releasing):
+- CI on every push and PR: pytest, `ty`, the frontend typecheck and build, the vendored
+  copy's check, hassfest and the HACS action.
+- Pushing a `vX.Y.Z` tag that matches `manifest.json` runs CI and publishes its
+  `yarbie.zip` on a GitHub release, which is what HACS installs (`zip_release` in
+  `hacs.json`). `www/` is not in git.
 
-**Moves to the dashboard:**
-- **Area settings** (the TODO 5 table). It becomes a full-width dashboard view, "Area
-  settings": a `panel` view the strategy adds, holding a `custom:yarbie-area-settings-card`
-  built from `areaTable.ts`. It uses the same `yarbie/area_settings/*` commands, rails and
-  backups.
-  - **Who can use it:** dashboards are seen by non-admins, while settings writes stay
-    admin-only. For non-admins the card shows the table read-only, and the writes still
-    refuse them.
-- **The single-area mowing settings form** (the Areas tab's pattern, cutting height,
-  passes, speed). These are settings, not map geometry: they belong in the same view,
-  with one area picked.
-- **Runs** (TODO 1): the run list, its plan filter and a run's timeline become a
-  `custom:yarbie-runs-card` in the dashboard's Recent column, next to the logbook.
-  - The run's areas, shaded by what was finished, can't go on the editor's map once it's
-    gone from there. They're drawn on a dashboard map (below).
-
-**A read-only map card for what is shown, not edited.** The editor's map also hosts views
-that edit nothing:
-- a past run's areas
-- the route preview
-- the current run's progress
-- the wear heatmap
-
-These go to one `custom:yarbie-yard-card` on the dashboard: MapLibre with the same
-imagery and alignment, no drawing tools, and layers picked by what you asked to see. It
-takes the place of the map image on the dashboard. It also lets the editor stop polling
-run progress, and stop following route-preview and heatmap jobs.
-
-**What the editor keeps:**
-- the drawing tools
-- the Selected and Changes sections
-- History (map backups) and imagery alignment
-- area names and shapes; an area's mowing settings are a link to the dashboard view
-
-The Plans and Areas sections, the Runs list, the wear heatmap, the route preview and the
-current-run overlay all leave. The header loses the Map / Area settings switch.
-
-**Things to settle while doing it:**
-- **Links from HA to the right place:** the editor's "area settings for this area", and
-  the device page's plan and run entities, should open the dashboard view with that area
-  or run selected. The cards read a hash or query parameter for this.
-- **The `image` entity:** it stays for other dashboards and for automations; only the
-  Yarbo dashboard swaps it for the yard card.
-- **Code layout:** `main.ts` gets smaller. The cards share map drawing (layers, imagery,
-  alignment) with the editor through a module both bundles import, not a copy. The cards
-  bundle stays loaded on every page, so the MapLibre part loads only when a yard card is
-  on screen.
-
-### 7. A real build and release process (stop committing built JS) (done)
-
-Today the Vite output in `custom_components/yarbie/www/` is committed, because HACS
-installs the repository as it stands and Home Assistant never runs `npm`. That costs:
-- **History:** every rebuild stores another ~1.5 MB editor bundle. `main` held 17 versions
-  of `www/` (about 10 MB before compression) after 7 rebuilds.
-- **Conflicts:** the file names carry content hashes, so any two branches that rebuild
-  conflict in `www/`.
-- **Drift:** nothing checks that the committed bundle matches `frontend/src`.
-
-There is also no CI at all. A missing file (the vendored protocol data, kept out by a
-`.gitignore` rule) reached GitHub, and only a fresh clone showed it.
-
-**The process to build:**
-- **CI on every push and PR** (GitHub Actions):
-  - `pytest` against the simulator
-  - `ty check custom_components tests`
-  - `npm ci && npm run typecheck && npm run build`
-  - `python3 scripts/vendor_yarbo_local.py --check`
-  - A check that the integration loads from a clean checkout (the fresh-clone test above),
-    with HA's own `hassfest` and the HACS validation action for the manifest, `hacs.json`
-    and translations.
-- **Releases from tags:** pushing `vX.Y.Z` runs the same checks, builds the frontend, and
-  zips `custom_components/yarbie` (with `www/` built) as `yarbie.zip` on a GitHub release.
-  - The tag must match `manifest.json`'s `version`, which the workflow checks.
-  - Release notes come from the commits since the last tag (or a `CHANGELOG.md`).
-- **HACS installs the release, not the branch:** `hacs.json` gets `"zip_release": true`
-  and `"filename": "yarbie.zip"`. HACS then offers versions, and updating is a release
-  away.
-- **Stop committing `www/`:** add it to `.gitignore` and remove the built files from git.
-  Locally `npm run build` or `npm run watch` still fill it, so `scripts/dev_ha.sh` works as
-  now. `panel.py` already logs and skips the panel when the build is missing.
-  - The vendored yarbo-local copy stays committed: it is small text, and its own check
-    guards it.
-- **Docs:** README sections on releasing (bump the version, tag, push) and on installing a
-  specific version from HACS.
-
-**Order:** land this after the open branches that rebuild `www/` (#5, #6), or rebase them
-onto it and drop their `www/` changes. From then on, a branch never commits build output.
-
-**Built** (branch `build-release`, after #5 and #6 merged), as planned except:
+Details:
 - **CI builds the zip on every run.** `scripts/build_release_zip.py` zips git's files in
   `custom_components/yarbie` plus the built `www/` (no `__pycache__`, tests or symlinks,
   fixed timestamps, so the same tree gives the same zip). CI then runs the test suite
-  against the unzipped copy, the fresh-clone check applied to what HACS installs. Each run
+  against the unzipped copy, so a file missing from what HACS installs fails CI. Each run
   keeps the zip as an artifact, and `release.yml` publishes CI's zip rather than building
-  its own. Running `release.yml` by hand is a dry run that stops there, even with a tag as its ref.
+  its own. Running `release.yml` by hand is a dry run that stops there, even with a tag
+  as its ref.
 - **The zip's root is the integration folder.** HACS extracts a `zip_release` asset
   straight into `custom_components/<domain>` (`download_zip_files` in HACS's
   `repositories/base.py`), so `manifest.json` sits at the root, not under
