@@ -663,11 +663,13 @@ Details:
   - battery, activity and head sensors; charging and problem binary sensors
   - buttons: beep, return to dock, pause, resume, stop
   - all-lights group, the `lawn_mower` entity, job lifecycle event, GPS tracker
-  - RTK status, heading, satellites, rain, planning, emergency stop, the 7 light channels
+  - RTK status, heading, satellites, rain, planning, emergency stop
   - `start_plan`, `set_lights`, pause/resume/return to dock
   - diagnostics, DHCP discovery, three blueprints
 - **Changed:**
-  - Charging power becomes wireless charger output voltage and current.
+  - Charging power is not offered yet: the wireless charger fields' scale is unresolved.
+  - The 7 light channels are one light, since `light_ctrl` sets them together;
+    `set_lights` still sets channels one by one.
   - The buzzer switch becomes the sound switch (`set_sound_param`).
   - Rain is on by default.
 - **Dropped:**
@@ -683,14 +685,14 @@ Details:
     - fault binary sensors (off by default)
   - **Actions:** `get_map`.
   - **Rails:** the untested-firmware Repairs issue and the kill switch.
-  - **The Yard editor panel:** map edits with backups, plans, area settings, route
-    preview, wear heatmap.
-  - **Records:** logbook entries and notifications for map changes.
-  - **Run history** (TODO 1).
+  - **The Yard editor panel:** map edits with backups, and smoothing.
+  - **Dashboard cards:** plans, schedules, runs, area settings, and the yard map with
+    the route preview, the current run and the wear map.
+  - **Records:** notifications and events for map and area settings changes.
+  - **Run history** (TODO 1) and last-run sensors.
+  - **Schedules:** a switch per schedule and a calendar (TODO 4).
 
 ## Open items
 
 - yarbo-local caches controller ownership. Check that the session notices when the phone
   app takes the controller, and take it again before each write batch if it doesn't.
-- Before cutover, list the markus-lassfolk entity IDs used in automations and dashboards,
-  so they can be renamed to match.
