@@ -122,7 +122,7 @@ keeps driven points.
 
 ## Results on the real map
 
-`python scripts/smooth_report.py <backup.json>`, with arcs on and shared edges pinned.
+`.venv/bin/python scripts/smooth_report.py <backup.json>`, with arcs on and shared edges pinned.
 Each result was checked separately with shapely:
 - every smoothed area lies inside the original, and every original no-go zone inside
   its smoothed one, to within 0.004 m² (the 2 mm allowed for rounding);
@@ -219,8 +219,8 @@ check, backup before every apply, busy check, and warnings.
 ## Risks and open questions
 
 1. **Area reshapes on the robot are lightly verified.** `diff._check` already warns
-   about this. Before the "Smooth all" button, smooth **one** small area (North House
-   Yard or South Garden Fence), apply it, then check that:
+   about this. Before using "Smooth all" on the robot, smooth **one** small area
+   (North House Yard or South Garden Fence), apply it, then check that:
    - the app shows the new outline;
    - `area` (m²) is recomputed;
    - a route preview and a short mow behave.
