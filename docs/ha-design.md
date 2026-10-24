@@ -478,49 +478,24 @@ a Pro.
 
 ### 3. Move plan editing out of the map editor (done)
 
-Built as planned, on `feature/plans-schedules-areas`:
+Plans are a robot setting, not map geometry: which areas, in what order. So they are
+edited where the robot's other controls are.
 - `custom:yarbie-plans-card` (`frontend/src/plansCard.ts`): the plans with their areas,
   New, Edit (name, areas as a checklist, then their order), Delete with a two-click
   confirm, and Start. The strategy places it under the plan select and passes the
-  robot's config entry, so two robots each get their own.
-- The card reads area names from a new `yarbie/areas/list` rather than the whole map.
-- The Yard editor's Plans section is the list with **Route**, which also outlines the
-  plan's areas, and a link to the dashboard it finds by its strategy.
+  robot's config entry, so two robots each get their own. Writes keep the rails: the
+  write lock, the busy check, the kill switch, untested firmware.
+- The card reads area names from `yarbie/areas/list` rather than the whole map.
+- A plan's route preview, with its areas outlined, is on the yard card (TODO 6).
 - Area order: the robot is sent the areas in the chosen order, but like the app yarbie
   sends `enable_self_order` on, so the robot may choose its own; the card says so.
-- Not built: the optional "Pick on the map". The device page's "Manage plans" link
-  cannot be added from an integration either (HA has no hook for it), so the plan select
-  stays the device page's part.
-
-The plan as written:
-
-Plans are a robot setting, not map geometry: which areas, in what order. Today they are
-edited in the Yard editor's Plans section. Move editing to where the robot's other
-controls live, and keep only what needs the map in the editor (route preview, picking
-areas by clicking them).
-
-**Where it goes:**
-- **A plan card on the Yarbo dashboard** (the strategy): the plans with their areas,
-  New, Edit (name and areas as a checklist, then the order), Delete with a confirm, and
-  Start.
-- **The device page**, as far as HA allows: the plan select stays. Add a "Manage plans"
-  link to the dashboard card, because the device page cannot host a custom editor.
-
-**How:**
-- **A custom Lovelace card** (`custom:yarbie-plans-card`), served beside the dashboard
-  strategy and placed in its first column. It uses the existing `yarbie/plans/*`
-  commands, so the backend does not change.
-- Writes keep the same rails: the write lock, the busy check, the kill switch, untested
-  firmware.
-- The Yard editor's Plans section shrinks to a list with **Route** and **Edit on the
-  dashboard**. When a plan's route is shown, its areas are highlighted on the map.
-- **Optional:** with the editor open, clicking areas on the map adds them to the plan
-  being edited, which the card would offer as "Pick on the map".
+- Not built: picking a plan's areas on the map. The device page cannot get a "Manage
+  plans" link either (HA has no hook for it), so the plan select is the device page's
+  part.
 
 ### 4. Schedule editor (built; step 1 still open)
 
-**Status.** The "then build" part is done on `feature/plans-schedules-areas`, tested
-against the simulator only. **Step 1 is not done: captures from the Yarbo app are still
+**Status.** Built and tested against the simulator only. **Step 1 is not done: captures from the Yarbo app are still
 needed**, so nothing below claims what the numbers mean.
 - `yarbie/schedules/list|save|delete` under the write rails (lock, busy, kill switch,
   untested firmware).
@@ -541,7 +516,7 @@ needed**, so nothing below claims what the numbers mean.
 When step 1 is done, change `schedules.READING`, `weekdays()` and `occurrences()` and the
 card's labels together.
 
-The plan as written:
+Background:
 
 yarbo-local has verified `read_schedules`, `save_schedule` and `del_schedule`. But only a
 *disabled* schedule has ever been stored on a real robot. What `schedule_type`,
@@ -555,20 +530,6 @@ not known. The app sent 3, 1 and 2.
 - Let one fire, and record what the robot did and what `plan_feedback` and the run
   history show.
 - Add what was learnt to the fork's `protocol/` (commands and codes), then pull it in.
-
-**Then build:**
-- **Entities:**
-  - A `calendar` entity showing upcoming scheduled runs, so they appear in HA's
-    calendar and automations can see them.
-  - A `switch` per schedule to enable or disable it.
-- **A schedule card** on the Yarbo dashboard: list, add, edit (plan, days, start and end
-  time, return method, resume progress), enable/disable, delete. It sits next to the
-  plan card from TODO 3.
-- **Websocket commands** `yarbie/schedules/list|save|delete`, under the same write rails.
-- **Run history:** a run started by a schedule says so ("started by schedule
-  <name>"). The run log can match the start against the schedule's time.
-- **Rain:** whether to skip a scheduled run when it is raining, as an option, which needs
-  the rain-pause blueprint's logic at start time.
 
 ### 5. Area settings: a bulk editor (done; moved to the dashboard in TODO 6)
 
