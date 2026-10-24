@@ -178,12 +178,12 @@ no phone layout yet), so read them as the idea, not as screenshots.
 
 - **DHCP discovery** on the robot's MAC prefix `C8:FE:0F:*`.
 - **Manual host** entry.
-- If neither is set, a **heartbeat scan** of the subnet HA is on. That is today's
-  `discovery.locate`, recognising the robot by the serial in its heartbeats.
+- If neither is set, a **heartbeat scan** of the subnet HA is on (`discovery.locate`),
+  recognising the robot by the serial in its heartbeats.
 - The last address is kept in the config entry and checked again at start-up. A rescan
   happens only if the robot has moved.
-- A hidden **simulator** option (developer mode only) runs the demo yard. Tests and local
-  development use it.
+- The address `simulator` runs the demo yard instead. Tests and local development use
+  it.
 
 **Options:**
 - Scan subnet.
@@ -191,10 +191,13 @@ no phone layout yet), so read them as the idea, not as screenshots.
 - Keep awake.
 - **Allow map writes**: the kill switch, on by default.
 - **Observe only**: never takes the controller. Used during migration.
+- Run history retention (365 days by default).
+- Smoothing tolerance, in inches or centimetres (`area-smoothing.md`).
 
 ### Coordinator
 
-- One `YarboRobot` session per robot. Telemetry pushes update entities, with no polling.
+- One `YarboRobot` session per robot. Telemetry is pushed and updates entities; only
+  the plans are read again on a timer (every 10 minutes), since the app can change them.
 - The map is cached by revision and read again when the broker reports a change (for
   example, an edit in the phone app) or after an apply.
 - The plan lifecycle comes from yarbo-local's `lifecycle.py` and feeds the `event` entity
@@ -210,15 +213,16 @@ Mockups: `mockups/01-dashboard.png`, `mockups/02-device.png`.
 |---|---|---|
 | `lawn_mower` | Yarbo: start, pause, dock | on |
 | `select` | Plan | on |
-| `sensor` | Activity, battery, plan status, plan progress, time remaining, error code, head type | on |
+| `sensor` | Activity, battery, plan, plan progress, time remaining, error code, head type | on |
+| `sensor` | Last run: outcome, ended, duration, progress (TODO 1) | on |
 | `sensor` | RTK status | on |
 | `sensor` | Satellites, heading, battery voltage, battery current | off |
-| `sensor` | Wireless charger output voltage and current, blade rpm (L/R), wheel speed (L/R) | off |
+| `sensor` | Blade rpm (L/R), wheel speed (L/R) | off |
 | `binary_sensor` | Charging, problem, rain, emergency stop, RTK fix, planning | on |
-| `binary_sensor` | Wheel, power and push-pod faults | off (they also feed "problem") |
+| `binary_sensor` | Awake | on |
+| `binary_sensor` | Wheel (L/R), power and push-pod faults | off (they also feed "problem") |
 | `button` | Beep (`song_cmd`), return to dock, pause, resume, stop, wake, refresh map | on |
-| `light` | All lights (`light_ctrl`) | on |
-| `light` | 7 individual channels | off |
+| `light` | All seven channels as one light (`light_ctrl`) | on |
 | `switch` | Sound (`set_sound_param`), person detection, child lock | on |
 | `switch` | One per schedule: on or off (TODO 4) | on |
 | `calendar` | Schedules: the enabled schedules' upcoming runs, under an unconfirmed reading (TODO 4) | on |
@@ -245,10 +249,11 @@ Green means eMMC writes and database growth.
 
 - **Diagnostics download**, redacted with yarbo-local's `redact.py` (serial, MAC, IP,
   coordinates, Wi-Fi).
-- **Repairs**: the untested-firmware issue above, plus "robot not found" with a rescan
-  fix.
-- **Logbook and persistent notifications**: after every apply, "Map changed by
-  &lt;user&gt; in Yard editor · N changes · backup &lt;name&gt;".
+- **Repairs**: the untested-firmware issue above.
+- **Persistent notifications and events**: after every apply, "Map changed by
+  &lt;user&gt; in Yard editor · N changes · backup &lt;name&gt;" and a
+  `yarbie_map_changed` event; after an Area settings change, the same with
+  `yarbie_area_settings_changed`.
 - **Blueprints**, ported from markus-lassfolk's set: pause mowing when it rains, low
   battery alert, job complete notification.
 - **HA backups**: everything yarbie keeps lives under `/config/yarbie/` or `.storage`, so
