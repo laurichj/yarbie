@@ -372,18 +372,17 @@ How the job version works:
 | Robot address, accepted firmware, settings | Config entry and its options |
 | Imagery choice and alignment, Area settings columns | The browser (`localStorage`), per user and device |
 
-## Migration from markus-lassfolk's integration
+## Migration from markus-lassfolk's integration (not done yet)
 
 The robot's broker has no authentication and each client gets its own ID, so both
 integrations can **read** at the same time. Only one may command the robot.
 
-1. Build and test against the simulator. No robot is involved.
+1. Build and test against the simulator. No robot is involved. (Done.)
 2. Install yarbie with **Observe only** on, next to the existing integration. Compare the
    sensors, tracker and events over a few days.
 3. **Cut over:**
    - Disable (don't delete) markus-lassfolk's integration, then turn off Observe only.
-   - Point the automations, blueprints and dashboards at yarbie's entities, renaming
-     entity IDs to the old ones where that saves editing.
+   - Point the automations, blueprints and dashboards at yarbie's entities.
 4. **Robot checks from the panel:**
    - The first-time checks: draw a small no-go zone, send it, check it in the Yarbo app;
      draw one in the app, reload, check it appears; delete the test zone.
@@ -393,50 +392,23 @@ integrations can **read** at the same time. Only one may command the robot.
    - Restore an HA backup and confirm the yarbie backups return.
 5. Remove markus-lassfolk's integration and `python-yarbo`.
 
-## Build plan
-
-Each phase ends with `pytest`, `ty check`, and the frontend typecheck passing.
-
-0. **Baseline.**
-   - Commit the current tree (the repo has no commits yet).
-   - Delete `docs/remote-design.md`.
-1. **Library.**
-   - Fork yarbo-local and vendor it with subtree at `395bdb5`.
-   - Add the CI registry and firmware check.
-2. **Skeleton.**
-   - Manifest, config flow (DHCP, manual, scan, simulator), coordinator.
-   - Move `mapdoc`, `diff`, `heatmap` and `demo` into `editor/`.
-   - Test harness: `pytest-homeassistant-custom-component` with the simulator.
-3. **Entities and actions** to parity (the tables above), plus diagnostics, the Repairs
-   issues and the kill switch.
-4. **Editor backend.**
-   - `apply.py`, `backups.py`, the websocket API, and jobs.
-   - Port `tests/test_api.py` to websocket tests, including duplicate route-preview
-     clicks, reconnecting during a job, a stale revision, and refusing writes while busy.
-5. **Panel.**
-   - Wrap `main.ts` as `<yarbie-panel>`, move `api.ts` onto `hass.callWS`, take status
-     from `hass.states`, add the phone layout.
-   - Build into `www/`.
-   - Dev loop: a local HA container on the Mac with the integration mounted, plus
-     `vite build --watch`.
-6. **Extras:** logbook and notifications, the `image` entity, blueprints, the HACS
-   manifest.
-7. **Migration** (the section above).
-8. **Clean up.** Remove `backend/`, the Docker files and the server dependencies, and
-   rewrite the README around the integration. Done, ahead of phase 7.
-
 ## TODO
 
 Outline smoothing (fewer points, rounder curves, areas only shrink and no-go zones only
 grow) has its own design: `area-smoothing.md`.
 
-### 1. Run history page
+### 1. Run history (done)
 
-A **Runs** tab in the panel, and a dashboard-friendly summary.
+Built as the runs card on the Yarbo dashboard (`custom:yarbie-runs-card`, TODO 6), the
+last-run sensors and the retention option. Not built: the date range filter, showing a
+run on the map as it was then (only its map revision is kept), links to its backup, and
+obstacles in the timeline.
+
+The design:
 
 **Data sources:**
 - **The robot's own history** (`read_all_plan_history`, verified): plan, start, duration,
-  areas finished (`finishIds`), charge trips. The robot keeps the history, so the tab
+  areas finished (`finishIds`), charge trips. The robot keeps the history, so the list
   works from day one.
 - **yarbie's run log**, written by the coordinator from lifecycle events into
   `/config/yarbie/runs/<start>.json`:
