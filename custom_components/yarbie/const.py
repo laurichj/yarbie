@@ -31,8 +31,6 @@ STORAGE_VERSION = 1
 # Telemetry arrives several times a second. Entities hear about it at most this often,
 # unless something they show changes (activity, battery, a fault...).
 PUSH_INTERVAL_S = 5.0
-# While a plan runs its progress is read this often.
-PROGRESS_INTERVAL_S = 30.0
 # Plans can change in the phone app; read them again this often.
 PLANS_INTERVAL_S = 600.0
 KEEP_AWAKE_INTERVAL_S = 60.0
