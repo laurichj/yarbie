@@ -452,7 +452,7 @@ function toMapFeature(id: string, live: GeoJSONStoreFeatures): MapFeature {
   };
 }
 
-export function defaultName(fam: Family): string {
+function defaultName(fam: Family): string {
   return (
     {
       areas: "Area",

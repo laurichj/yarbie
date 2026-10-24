@@ -22,7 +22,7 @@ export const COLORS: Record<Family, `#${string}`> = {
 };
 
 const ESRI = "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community";
-export const IMAGERY: Imagery[] = [
+const IMAGERY: Imagery[] = [
   {
     id: "esri",
     label: "Esri World Imagery",
@@ -164,7 +164,7 @@ export class YardImagery {
   }
 }
 
-export function loadOffset(source: string): [number, number] {
+function loadOffset(source: string): [number, number] {
   return load(
     `yarbie.offset.${source}`,
     (v) => (Array.isArray(v) && v.length === 2 ? [Number(v[0]), Number(v[1])] : null),
