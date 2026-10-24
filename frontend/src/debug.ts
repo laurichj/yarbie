@@ -10,7 +10,7 @@ const search = (() => {
     return location.search;
   }
 })();
-export const DEBUG = new URLSearchParams(search).has("debug");
+const DEBUG = new URLSearchParams(search).has("debug");
 
 export function debugLog(kind: string, detail: unknown = {}) {
   if (!DEBUG) return;

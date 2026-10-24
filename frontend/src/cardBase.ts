@@ -33,7 +33,7 @@ export interface WriteState {
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-export class CardError extends Error {
+class CardError extends Error {
   constructor(
     message: string,
     readonly code?: string,

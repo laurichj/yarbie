@@ -817,7 +817,7 @@ async function pollStatus() {
   }
   const pill = $("status");
   if (!status) {
-    pill.textContent = "backend offline";
+    pill.textContent = "yarbie not answering";
     pill.className = "pill bad";
   } else {
     const parts = [status.source.toUpperCase()];

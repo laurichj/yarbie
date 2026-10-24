@@ -1,9 +1,10 @@
 """Try smoothing on a saved map and report what it would do.
 
-    python3 scripts/smooth_report.py MAP.json [--tolerance-in 6] [--no-arcs] [--svg OUT.html]
+    .venv/bin/python scripts/smooth_report.py MAP.json [--tolerance-in 6] [--no-arcs] [--svg OUT.html]
 
 MAP.json is an editor backup (/config/yarbie/backups/*.json) or a bare map. Nothing is sent
-to the robot. With --svg, writes a page with each outline drawn before and after.
+to the robot. With --svg, writes a page with each outline drawn before and after. Run it
+with the dev venv's Python: the vendored yarbo-local needs pyyaml.
 """
 
 from __future__ import annotations

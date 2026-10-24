@@ -23,7 +23,6 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import schedules
 from ._vendor.yarbo_local.exceptions import YarboError
-from ._vendor.yarbo_local.payloads import APP_MOWER_AREA_KEYS
 from .const import DOMAIN, OPT_GOOGLE_MAPS_KEY, SMOOTHING_LIMITS_M
 from .coordinator import YarbieCoordinator
 from .editor import mapdoc, routes, runs
@@ -218,12 +217,6 @@ def _announce(hass: HomeAssistant, c: YarbieCoordinator, actor: str, result: dic
         {"serial": c.serial, "actor": actor, "changes": count, "backup": result["backup"]},
     )
     c.async_update_listeners()
-
-
-@_command({probatio.Required("type"): "yarbie/export"})
-async def ws_export(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    view = await _coordinator(hass, msg).service.load()
-    connection.send_result(msg["id"], view.public()["features"])
 
 
 @_command({probatio.Required("type"): "yarbie/backups/list"})
@@ -424,27 +417,6 @@ async def ws_areas(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     connection.send_result(msg["id"], sorted(areas, key=lambda a: a["id"]))
 
 
-@_command({probatio.Required("type"): "yarbie/area_params/get", probatio.Required("area_id"): int})
-async def ws_area_params(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    c = _coordinator(hass, msg)
-    params = await c.robot.mower_area_params(msg["area_id"])
-    if params is None:
-        raise LookupError(f"the robot has no area {msg['area_id']}")
-    connection.send_result(
-        msg["id"], {"params": params, "editable": [k for k in APP_MOWER_AREA_KEYS if k != "id"]}
-    )
-
-
-@_command(
-    {probatio.Required("type"): "yarbie/area_params/save", probatio.Required("area_id"): int, probatio.Required("changes"): dict}
-)
-async def ws_area_params_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    c = _coordinator(hass, msg)
-    sent = await c.service.update_mower_area_params(msg["area_id"], msg["changes"])
-    c.area_settings_read = None
-    connection.send_result(msg["id"], {"sent": sent})
-
-
 @_read({probatio.Required("type"): "yarbie/area_settings/get"})
 async def ws_area_settings(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Every area's pattern and mowing settings, for the Area settings table."""
@@ -562,14 +534,6 @@ async def ws_route_start(hass: HomeAssistant, connection: websocket_api.ActiveCo
     connection.send_result(msg["id"], job.public())
 
 
-@_command({probatio.Required("type"): "yarbie/job/get", probatio.Required("job_id"): str})
-async def ws_job_get(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    job = _coordinator(hass, msg).jobs.get(msg["job_id"])
-    if job is None:
-        raise LookupError("no such job")
-    connection.send_result(msg["id"], job.public())
-
-
 @websocket_api.websocket_command(
     {probatio.Required("type"): "yarbie/job/subscribe", probatio.Required("job_id"): str, ENTRY: str}
 )
@@ -598,10 +562,9 @@ def ws_job_subscribe(
 
 
 COMMANDS = (
-    ws_info, ws_map, ws_preview, ws_smooth, ws_apply, ws_export, ws_backups, ws_backup, ws_imagery,
+    ws_info, ws_map, ws_preview, ws_smooth, ws_apply, ws_backups, ws_backup, ws_imagery,
     ws_progress, ws_heatmap, ws_plans, ws_plan_save, ws_plan_delete, ws_schedules,
-    ws_schedule_save, ws_schedule_delete, ws_areas, ws_area_params, ws_area_params_save,
-    ws_area_settings, ws_area_settings_apply, ws_runs, ws_run, ws_route_start, ws_job_get,
+    ws_schedule_save, ws_schedule_delete, ws_areas, ws_area_settings, ws_area_settings_apply, ws_runs, ws_run, ws_route_start,
     ws_job_subscribe,
 )
 

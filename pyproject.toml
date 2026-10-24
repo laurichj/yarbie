@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 name = "yarbie"
 version = "0.2.0"
 description = "Home Assistant integration for Yarbo robots, with a map editor panel"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     # The integration's manifest requirement (yarbo-local itself is vendored).
     "aiomqtt==2.5.1",

@@ -59,10 +59,6 @@ class Jobs:
     def get(self, job_id: str) -> Job | None:
         return next((j for j in self._by_key.values() if j.id == job_id), None)
 
-    @property
-    def running(self) -> list[Job]:
-        return [j for j in self._by_key.values() if j.status == "running"]
-
     def start(self, kind: str, key: str, work: Callable[[], Awaitable[Any]]) -> Job:
         """The job for ``key``: the running or kept one if there is one, else a new one."""
         self._expire()

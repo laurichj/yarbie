@@ -208,12 +208,6 @@ class MapService:
             self._check_idle()
             await self.robot.delete_schedule(schedule_id)
 
-    async def update_mower_area_params(self, area_id: int, changes: dict[str, Any]) -> dict[str, Any]:
-        self._check_writes()
-        async with self.lock:
-            self._check_idle()
-            return await self.robot.update_mower_area_params(area_id, changes)
-
     # -- many areas' settings at once (the Area settings view)
 
     async def area_settings(self) -> list[dict[str, Any]]:

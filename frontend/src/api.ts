@@ -41,7 +41,7 @@ export interface MapResponse {
 }
 
 export interface Status {
-  source: "sim" | "lan" | "cloud";
+  source: "sim" | "lan";
   writable: boolean;
   connected: boolean;
   activity?: string | null;

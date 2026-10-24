@@ -1,44 +1,24 @@
 # yarbie as a Home Assistant integration
 
-Status: being built · 2026-10-22 · replaces `remote-design.md` (GCP), which is no longer pursued.
+Status: built and checked against the simulator in a local HA 2026.10.2; the migration
+on the real robot is still to do. Updated 2026-10-23.
 
 ## Implementation status
 
-Done on branch `ha-integration` (phases 0–6, checked in a local HA 2026.10.2 with the
-simulator):
+Built (PRs #1 to #9):
 
-- Baseline commit; yarbo-local vendored.
-- The integration: config flow, coordinator, all platforms in the entity table, actions,
+- The integration: config flow, coordinator, the platforms in the entity table, actions,
   diagnostics, the firmware repair, the kill switch and observe-only mode.
-- The editor's websocket API and jobs.
-- The panel.
+- The Yard editor panel, and its websocket API and jobs.
 - The map image entity, blueprints, HACS manifest, `scripts/dev_ha.sh`.
-- The Yarbo dashboard strategy (Settings, Dashboards, Add dashboard, Yarbo).
-- The run history (TODO 1):
-  - the robot's records joined with yarbie's run log in `/config/yarbie/runs`
-  - the panel's Runs section
-  - last-run sensors
-  - a retention option
+- The Yarbo dashboard strategy (Settings, Dashboards, Add dashboard, Yarbo) and its
+  cards.
+- The run history (TODO 1), plan cards (TODO 3), the schedule editor (TODO 4, but its
+  step 1 is open), Area settings (TODO 5), the editor kept to editing the map (TODO 6),
+  and CI and releases (TODO 7).
+- Outline smoothing (`area-smoothing.md`).
 
-Done on branch `feature/plans-schedules-areas` (checked with the simulator):
-
-- Plan editing moved to the dashboard (TODO 3): `custom:yarbie-plans-card`.
-- The schedule editor, built (TODO 4): websocket commands, a switch per schedule, a
-  Schedules calendar and `custom:yarbie-schedules-card`. What the robot's schedule
-  numbers mean is still unconfirmed; step 1 of TODO 4 (captures from the app) is open.
-- The Area settings view (TODO 5): a table of every area's settings, set in bulk.
-
-Done on branch `build-release`:
-
-- The build and release process (TODO 7): CI on every push and PR, releases from
-  `vX.Y.Z` tags with `yarbie.zip` for HACS, and `www/` no longer in git.
-
-Done on branch `editor-scope` (checked with the simulator):
-
-- The Yard editor keeps to editing the map (TODO 6). Area settings, runs, the route
-  preview, the current run and the wear map moved to the Yarbo dashboard's cards.
-
-Where the build differs from the plan below:
+Where the build differs from the design below:
 
 - **Vendoring layout.** The subtree holds the whole upstream repo at
   `third_party/yarbo-local`. `scripts/vendor_yarbo_local.py` copies the package and its
@@ -77,13 +57,23 @@ Where the build differs from the plan below:
   the map, plans and area settings as last read (an admin's change clears the area
   settings reading), and progress is asked of the robot at most every 5 seconds.
 
+- **One light, not eight.** `light_ctrl` sets every channel together, so there is one
+  light for all seven and no per-channel entities. `yarbie.set_lights` still takes
+  levels per channel.
+- **The simulator is an address**, not a hidden option: typing `simulator` as the host
+  in the config flow runs the demo yard.
+- **No logbook entries.** An apply or an Area settings change sends a persistent
+  notification and fires `yarbie_map_changed` or `yarbie_area_settings_changed`; nothing
+  describes those events to the logbook.
+
 Not done yet:
 
-- Phase 7 (migration on the real robot). Phase 8 (removing `backend/` and the Docker
-  files) was done ahead of it, before merging.
+- The migration on the real robot (below).
 - The panel's phone layout and HA theme colours.
 - Entity icons.
 - The error sensor as an enum with translated fault names.
+- A "robot not found" repair with a rescan fix. Today setup scans for the robot by
+  serial when it is not at its stored address, and HA retries setup until it is found.
 - The run history shows past runs on today's map. Only the map revision is kept, not a
   copy of the map as it was.
 
@@ -98,8 +88,8 @@ three jobs, using one connection to the robot:
 - the map editor, as a sidebar panel inside HA;
 - map backups and the safety rails around every write.
 
-We drop the standalone FastAPI server and the Docker image. There is no non-HA run mode.
-Development uses a local HA container with the simulator.
+It replaced a standalone FastAPI server and its Docker image. There is no non-HA run
+mode. Development uses a throwaway local HA (`scripts/dev_ha.sh`) with the simulator.
 
 Only the mower is in scope. Snow and leaf blower heads are out.
 
@@ -111,7 +101,7 @@ Only the mower is in scope. Snow and leaf blower heads are out.
 | Existing integrations | Replaced, not built on | Reimplementing is cheap with yarbo-local, and one owner removes contention for the robot's controller role |
 | Protocol library | **yarbo-local**, forked and vendored with `git subtree` | It has a registry of 57 commands verified against the phone app and refuses anything else. All its internal imports are relative, so it vendors cleanly |
 | Library dropped | `python-yarbo` | It exposes raw `send_command`, which is exactly what the rails exist to stop |
-| Editor UI | The existing MapLibre/TypeScript editor, rewrapped as an HA custom panel | Keeps the work already done. It talks to the backend over HA's websocket |
+| Editor UI | The existing MapLibre/TypeScript editor, rewrapped as an HA custom panel | Keeps the work already done. It talks to the integration over HA's websocket |
 | Server stack dropped | FastAPI, uvicorn, pydantic, python-dotenv, httpx, Dockerfile, compose, env `config.py`, `cloud` source, `yarbo-data-sdk` | HA provides HTTP, websocket, auth, config and storage |
 | Remote access | HA's own (companion app or whatever remote access HA has) | No separate exposure |
 
@@ -127,46 +117,54 @@ role is the Yarbo phone app. Reads never take it.
 
 ```
 custom_components/yarbie/
-  manifest.json  __init__.py  const.py  config_flow.py  coordinator.py
+  manifest.json  __init__.py  const.py  config_flow.py  coordinator.py  entity.py
   lawn_mower.py sensor.py binary_sensor.py button.py select.py switch.py
-  light.py device_tracker.py event.py image.py
-  diagnostics.py  repairs.py  services.yaml  strings.json  translations/en.json
-  websocket.py    editor API (websocket commands and job subscriptions)
-  panel.py        registers the sidebar panel and serves www/
-  editor/
-    mapdoc.py diff.py heatmap.py demo.py    moved unchanged from backend/yarbie
-    apply.py      today's MapService.apply/_send and rails
-    backups.py    today's BackupStore, plus actor and metadata
-    discovery.py  today's discovery, plus a DHCP hint
-    imagery.py    Google Map Tiles session, on HA's aiohttp session and Store
-    jobs.py       long-running robot calls (route preview, history read)
-  _vendor/yarbo_local/                      copied from third_party/yarbo-local
-  www/yarbie-panel.js                       built from frontend/; not in git
+  light.py device_tracker.py event.py image.py calendar.py
+  diagnostics.py  repairs.py  services.py  services.yaml  strings.json  translations/en.json
+  robot.py        the robot session (LAN or the built-in simulator)
+  discovery.py    finds the robot by the serial in its heartbeats
+  jobs.py         long-running robot calls (route preview)
+  runlog.py       yarbie's own record of each run, in /config/yarbie/runs
+  schedules.py    the schedules, and the one reading of their numbers it assumes
+  imagery.py      Google Map Tiles session, on HA's aiohttp session and Store
+  units.py        short lengths in the user's units
+  websocket.py    the panel's and cards' API (websocket commands and job subscriptions)
+  panel.py        registers the sidebar panel, the cards and the strategy; serves www/
+  editor/         the map logic, with no Home Assistant imports
+    mapdoc.py diff.py service.py backups.py   the map as GeoJSON, edits, applying, backups
+    smooth.py routes.py runs.py heatmap.py    smoothing, routes, run history, wear
+    render.py demo.py                         the image entity's SVG, the demo yard
+  _vendor/yarbo_local/                        copied from third_party/yarbo-local
+  www/                                        built from frontend/; not in git
 frontend/            TypeScript source. A Vite library build writes www/
+third_party/yarbo-local/   the library, as a git subtree
 .github/workflows/   ci.yml (every push and PR), release.yml (vX.Y.Z tags)
-scripts/             dev_ha.sh, check.sh, vendor_yarbo_local.py, build_release_zip.py
+scripts/             dev_ha.sh, check.sh, vendor_yarbo_local.py, build_release_zip.py,
+                     smooth_report.py
 blueprints/automation/yarbie/
 tests/               pytest-homeassistant-custom-component, against the simulator
 hacs.json
-docs/ha-design.md  docs/mockups/
+docs/ha-design.md  docs/area-smoothing.md  docs/mockups/
 ```
 
-`backend/`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` and
-`pyproject.toml`'s server entry points are gone (phase 8). `pyproject.toml` stays for dev
-tools: pytest, `ty`, the HA test harness, and the integration's `aiomqtt` requirement.
+`pyproject.toml` is for development only: pytest, `ty`, the HA test harness, and the
+integration's `aiomqtt` requirement.
+
+The mockups in `docs/mockups/` are the early design, drawn before the build. The UI has
+moved on since (plans, schedules, runs and area settings are on the dashboard; there is
+no phone layout yet), so read them as the idea, not as screenshots.
 
 ## Library: vendoring and staying in sync
 
-- Fork `yarbo-local/yarbo-local` to our GitHub. Bring it in with
-  `git subtree add --prefix custom_components/yarbie/_vendor/yarbo_local …`, starting from
-  the commit pinned today (`395bdb5`).
-- Updates come in with `git subtree pull` as **one commit**, with the upstream SHA in the
-  message. Never edit the vendored copy by hand. Fixes go to the fork first, then come in
-  by subtree.
+- The library is forked to `laurichj/yarbo-local` and held as a `git subtree` at
+  `third_party/yarbo-local`, from the commit it was verified with (`395bdb5` upstream at
+  first; later pulls come from the fork, remote `yarbo-local`). Fixes go to the fork
+  first, then come in with `git subtree pull`.
+- `scripts/vendor_yarbo_local.py` copies it into `custom_components/yarbie/_vendor`
+  (see "Vendoring layout" above). The copy is never edited by hand, and CI's `--check`
+  fails on a stale or hand-edited one.
 - `manifest.json` requirements are `aiomqtt==<pin>` only. aiomqtt needs `paho-mqtt>=2.1`,
   which HA already ships, and `pyyaml` is already in HA.
-- **A CI check** keeps the vendored `commands.yaml` version and its tested firmware equal
-  to `const.TESTED_FIRMWARE`.
 - **A rail in HA:**
   - If the robot reports firmware outside the tested set, raise a Repairs issue and turn
     **map, plan and settings writes off** until you confirm after redoing the first-time
@@ -180,12 +178,12 @@ tools: pytest, `ty`, the HA test harness, and the integration's `aiomqtt` requir
 
 - **DHCP discovery** on the robot's MAC prefix `C8:FE:0F:*`.
 - **Manual host** entry.
-- If neither is set, a **heartbeat scan** of the subnet HA is on. That is today's
-  `discovery.locate`, recognising the robot by the serial in its heartbeats.
+- If neither is set, a **heartbeat scan** of the subnet HA is on (`discovery.locate`),
+  recognising the robot by the serial in its heartbeats.
 - The last address is kept in the config entry and checked again at start-up. A rescan
   happens only if the robot has moved.
-- A hidden **simulator** option (developer mode only) runs the demo yard. Tests and local
-  development use it.
+- The address `simulator` runs the demo yard instead. Tests and local development use
+  it.
 
 **Options:**
 - Scan subnet.
@@ -193,10 +191,13 @@ tools: pytest, `ty`, the HA test harness, and the integration's `aiomqtt` requir
 - Keep awake.
 - **Allow map writes**: the kill switch, on by default.
 - **Observe only**: never takes the controller. Used during migration.
+- Run history retention (365 days by default).
+- Smoothing tolerance, in inches or centimetres (`area-smoothing.md`).
 
 ### Coordinator
 
-- One `YarboRobot` session per robot. Telemetry pushes update entities, with no polling.
+- One `YarboRobot` session per robot. Telemetry is pushed and updates entities; only
+  the plans are read again on a timer (every 10 minutes), since the app can change them.
 - The map is cached by revision and read again when the broker reports a change (for
   example, an edit in the phone app) or after an apply.
 - The plan lifecycle comes from yarbo-local's `lifecycle.py` and feeds the `event` entity
@@ -212,15 +213,16 @@ Mockups: `mockups/01-dashboard.png`, `mockups/02-device.png`.
 |---|---|---|
 | `lawn_mower` | Yarbo: start, pause, dock | on |
 | `select` | Plan | on |
-| `sensor` | Activity, battery, plan status, plan progress, time remaining, error code, head type | on |
+| `sensor` | Activity, battery, plan, plan progress, time remaining, error code, head type | on |
+| `sensor` | Last run: outcome, ended, duration, progress (TODO 1) | on |
 | `sensor` | RTK status | on |
 | `sensor` | Satellites, heading, battery voltage, battery current | off |
-| `sensor` | Wireless charger output voltage and current, blade rpm (L/R), wheel speed (L/R) | off |
+| `sensor` | Blade rpm (L/R), wheel speed (L/R) | off |
 | `binary_sensor` | Charging, problem, rain, emergency stop, RTK fix, planning | on |
-| `binary_sensor` | Wheel, power and push-pod faults | off (they also feed "problem") |
+| `binary_sensor` | Awake | on |
+| `binary_sensor` | Wheel (L/R), power and push-pod faults | off (they also feed "problem") |
 | `button` | Beep (`song_cmd`), return to dock, pause, resume, stop, wake, refresh map | on |
-| `light` | All lights (`light_ctrl`) | on |
-| `light` | 7 individual channels | off |
+| `light` | All seven channels as one light (`light_ctrl`) | on |
 | `switch` | Sound (`set_sound_param`), person detection, child lock | on |
 | `switch` | One per schedule: on or off (TODO 4) | on |
 | `calendar` | Schedules: the enabled schedules' upcoming runs, under an unconfirmed reading (TODO 4) | on |
@@ -247,10 +249,11 @@ Green means eMMC writes and database growth.
 
 - **Diagnostics download**, redacted with yarbo-local's `redact.py` (serial, MAC, IP,
   coordinates, Wi-Fi).
-- **Repairs**: the untested-firmware issue above, plus "robot not found" with a rescan
-  fix.
-- **Logbook and persistent notifications**: after every apply, "Map changed by
-  &lt;user&gt; in Yard editor · N changes · backup &lt;name&gt;".
+- **Repairs**: the untested-firmware issue above.
+- **Persistent notifications and events**: after every apply, "Map changed by
+  &lt;user&gt; in Yard editor · N changes · backup &lt;name&gt;" and a
+  `yarbie_map_changed` event; after an Area settings change, the same with
+  `yarbie_area_settings_changed`.
 - **Blueprints**, ported from markus-lassfolk's set: pause mowing when it rains, low
   battery alert, job complete notification.
 - **HA backups**: everything yarbie keeps lives under `/config/yarbie/` or `.storage`, so
@@ -266,16 +269,17 @@ Mockups: `mockups/03-editor-changes.png`, `mockups/04-plans-route-preview.png`,
 - The integration serves the module from `www/` with a content hash for caching.
 
 **Frontend:**
-- `main.ts` becomes a `<yarbie-panel>` custom element. HA passes it the `hass` object.
-- `api.ts` keeps its typed functions but calls `hass.callWS` instead of `fetch`.
-- Robot status comes from `hass.states`, pushed live. The 4-second status poll goes away.
-- It uses HA theme variables, so it follows light and dark mode.
-- On a phone (narrow screens) it switches to floating tool buttons and a bottom sheet.
+- `panel.ts` defines the `<yarbie-panel>` element HA creates, in its own iframe, and
+  passes it the `hass` object; `main.ts` is the editor.
+- `api.ts` holds the typed calls, over `hass.callWS`.
+- The status pill polls `yarbie/info` (see "Where the build differs" above).
+- Not yet: HA theme colours, and a phone layout (floating tool buttons and a bottom
+  sheet were the idea).
 
 **Map:**
 - MapLibre with satellite imagery: Google if a key is set, otherwise the free sources
-  already built in.
-- Imagery alignment offset, as today.
+  built in.
+- An imagery alignment offset, display only, kept in the browser.
 
 **Tools:** select, no-go zone, pathway, sidewalk, reshape area, undo, smoothing, backups.
 
@@ -298,27 +302,31 @@ the current run and the wear map.
 Writes, route previews, backups and the imagery list check for an admin user; the reads
 the dashboard cards show (info, map, progress, heatmap, plans, areas, area settings,
 runs) are open to every user, who get what was last read (TODO 6). Every write records
-`connection.user.name` as the actor.
+`connection.user.name` as the actor. Each command takes an optional `entry_id` to pick
+the robot when there are several.
 
-| Command | Replaces |
-|---|---|
-| `yarbie/map` | `GET /api/map` |
-| `yarbie/preview` | `POST /api/map/preview` |
-| `yarbie/apply` `{features, revision}` | `POST /api/map/apply` |
-| `yarbie/backups/list`, `yarbie/backups/get` | `/api/backups*` |
-| `yarbie/imagery` | `/api/imagery` |
-| `yarbie/plans/list|save|delete` | `/api/plans*` |
-| `yarbie/area_params/get|save` | `/api/areas/{id}/mower-params` |
-| `yarbie/areas/list` | (new) area ids and names, for the cards |
-| `yarbie/schedules/list|save|delete` | (new, TODO 4) |
-| `yarbie/area_settings/get|apply` | (new, TODO 5) every area's settings; a bulk change |
-| `yarbie/progress/subscribe` | `/api/progress` (it is pushed now) |
-| `yarbie/route/start`, `yarbie/job/subscribe` | `/api/plans/{id}/route` |
-| `yarbie/heatmap/start` | `/api/heatmap` |
-| `yarbie/export` | `/api/export.geojson` |
+| Command | Who | What |
+|---|---|---|
+| `yarbie/info` | everyone | connection, writability, activity, battery, position, smoothing units |
+| `yarbie/map` | everyone | the map as GeoJSON, with its revision |
+| `yarbie/preview` | admin | the writes an edited map would send, with warnings |
+| `yarbie/smooth` | admin | smoothed outlines (`area-smoothing.md`) |
+| `yarbie/apply` `{features, revision}` | admin | send the edits, after a backup |
+| `yarbie/backups/list`, `yarbie/backups/get` | admin | map and area settings backups |
+| `yarbie/imagery` | admin | imagery that needs a key (Google) |
+| `yarbie/progress` | everyone | the current run's progress |
+| `yarbie/heatmap` | everyone | estimated wear from the run history |
+| `yarbie/plans/list` | everyone | the plans |
+| `yarbie/plans/save|delete` | admin | change the plans (TODO 3) |
+| `yarbie/schedules/list|save|delete` | admin | the schedules (TODO 4) |
+| `yarbie/areas/list` | everyone | area ids and names, for the cards |
+| `yarbie/area_settings/get` | everyone | every area's settings (TODO 5) |
+| `yarbie/area_settings/apply` | admin | a change to one or many areas' settings |
+| `yarbie/runs/list`, `yarbie/runs/get` | everyone | the run history (TODO 1) |
+| `yarbie/route/start`, `yarbie/job/subscribe` | admin | a route preview, as a job (below) |
 
-`/api/status` and `/api/client-log` go away: status comes from entities, and panel errors
-go to HA's system log.
+Opened with `?debug` in its address, the panel writes its errors and what each click on
+the map did to HA's system log (`system_log.write`).
 
 ### Long-running robot calls are jobs
 
@@ -331,12 +339,14 @@ controller.
 How the job version works:
 - `yarbie/route/start` returns a job id at once. The integration runs **at most one**
   preview per (plan id, map revision) and keeps the result.
-- The panel subscribes to the job. After a reconnect or reload it picks up the running
-  job or the stored result. A second click joins the existing job.
-- While it runs, the activity sensor reads "computing route", and map writes wait for it.
-- yarbo-local has no verified command to cancel the robot's calculation. So the panel
-  offers **"Stop waiting"**, not "Cancel".
-- The plan-history read for the wear heatmap uses the same mechanism.
+- The yard card subscribes to the job (`yarbie/job/subscribe` sends its state at once,
+  then again when it ends). After a reconnect or reload, starting the same preview
+  again joins the running job or gets the kept result, so a second click never sends a
+  second command.
+- A preview is refused while a plan is running or paused: if it took the controller, it
+  would pause the run.
+- yarbo-local has no verified command to cancel the robot's calculation, so there is no
+  Cancel; the card shows how long it has been computing.
 
 ## Safety rails (all kept, all inside the integration)
 
@@ -358,21 +368,21 @@ How the job version works:
 |---|---|
 | Map and area settings backups | `/config/yarbie/backups/` (included in HA backups) |
 | Run log (TODO 1) | `/config/yarbie/runs/` |
-| Robot address, Google tile session, imagery offset | HA `Store` (`.storage/yarbie.*`) |
-| Settings | Config entry and its options |
+| Google tile session, the run tracker's state | HA `Store` (`.storage/yarbie.*`) |
+| Robot address, accepted firmware, settings | Config entry and its options |
+| Imagery choice and alignment, Area settings columns | The browser (`localStorage`), per user and device |
 
-## Migration from markus-lassfolk's integration
+## Migration from markus-lassfolk's integration (not done yet)
 
 The robot's broker has no authentication and each client gets its own ID, so both
 integrations can **read** at the same time. Only one may command the robot.
 
-1. Build and test against the simulator. No robot is involved.
+1. Build and test against the simulator. No robot is involved. (Done.)
 2. Install yarbie with **Observe only** on, next to the existing integration. Compare the
    sensors, tracker and events over a few days.
 3. **Cut over:**
    - Disable (don't delete) markus-lassfolk's integration, then turn off Observe only.
-   - Point the automations, blueprints and dashboards at yarbie's entities, renaming
-     entity IDs to the old ones where that saves editing.
+   - Point the automations, blueprints and dashboards at yarbie's entities.
 4. **Robot checks from the panel:**
    - The first-time checks: draw a small no-go zone, send it, check it in the Yarbo app;
      draw one in the app, reload, check it appears; delete the test zone.
@@ -382,50 +392,23 @@ integrations can **read** at the same time. Only one may command the robot.
    - Restore an HA backup and confirm the yarbie backups return.
 5. Remove markus-lassfolk's integration and `python-yarbo`.
 
-## Build plan
-
-Each phase ends with `pytest`, `ty check`, and the frontend typecheck passing.
-
-0. **Baseline.**
-   - Commit the current tree (the repo has no commits yet).
-   - Delete `docs/remote-design.md`.
-1. **Library.**
-   - Fork yarbo-local and vendor it with subtree at `395bdb5`.
-   - Add the CI registry and firmware check.
-2. **Skeleton.**
-   - Manifest, config flow (DHCP, manual, scan, simulator), coordinator.
-   - Move `mapdoc`, `diff`, `heatmap` and `demo` into `editor/`.
-   - Test harness: `pytest-homeassistant-custom-component` with the simulator.
-3. **Entities and actions** to parity (the tables above), plus diagnostics, the Repairs
-   issues and the kill switch.
-4. **Editor backend.**
-   - `apply.py`, `backups.py`, the websocket API, and jobs.
-   - Port `tests/test_api.py` to websocket tests, including duplicate route-preview
-     clicks, reconnecting during a job, a stale revision, and refusing writes while busy.
-5. **Panel.**
-   - Wrap `main.ts` as `<yarbie-panel>`, move `api.ts` onto `hass.callWS`, take status
-     from `hass.states`, add the phone layout.
-   - Build into `www/`.
-   - Dev loop: a local HA container on the Mac with the integration mounted, plus
-     `vite build --watch`.
-6. **Extras:** logbook and notifications, the `image` entity, blueprints, the HACS
-   manifest.
-7. **Migration** (the section above).
-8. **Clean up.** Remove `backend/`, the Docker files and the server dependencies, and
-   rewrite the README around the integration. Done, ahead of phase 7.
-
 ## TODO
 
 Outline smoothing (fewer points, rounder curves, areas only shrink and no-go zones only
 grow) has its own design: `area-smoothing.md`.
 
-### 1. Run history page
+### 1. Run history (done)
 
-A **Runs** tab in the panel, and a dashboard-friendly summary.
+Built as the runs card on the Yarbo dashboard (`custom:yarbie-runs-card`, TODO 6), the
+last-run sensors and the retention option. Not built: the date range filter, showing a
+run on the map as it was then (only its map revision is kept), links to its backup, and
+obstacles in the timeline.
+
+The design:
 
 **Data sources:**
 - **The robot's own history** (`read_all_plan_history`, verified): plan, start, duration,
-  areas finished (`finishIds`), charge trips. The robot keeps the history, so the tab
+  areas finished (`finishIds`), charge trips. The robot keeps the history, so the list
   works from day one.
 - **yarbie's run log**, written by the coordinator from lifecycle events into
   `/config/yarbie/runs/<start>.json`:
@@ -495,49 +478,24 @@ a Pro.
 
 ### 3. Move plan editing out of the map editor (done)
 
-Built as planned, on `feature/plans-schedules-areas`:
+Plans are a robot setting, not map geometry: which areas, in what order. So they are
+edited where the robot's other controls are.
 - `custom:yarbie-plans-card` (`frontend/src/plansCard.ts`): the plans with their areas,
   New, Edit (name, areas as a checklist, then their order), Delete with a two-click
   confirm, and Start. The strategy places it under the plan select and passes the
-  robot's config entry, so two robots each get their own.
-- The card reads area names from a new `yarbie/areas/list` rather than the whole map.
-- The Yard editor's Plans section is the list with **Route**, which also outlines the
-  plan's areas, and a link to the dashboard it finds by its strategy.
+  robot's config entry, so two robots each get their own. Writes keep the rails: the
+  write lock, the busy check, the kill switch, untested firmware.
+- The card reads area names from `yarbie/areas/list` rather than the whole map.
+- A plan's route preview, with its areas outlined, is on the yard card (TODO 6).
 - Area order: the robot is sent the areas in the chosen order, but like the app yarbie
   sends `enable_self_order` on, so the robot may choose its own; the card says so.
-- Not built: the optional "Pick on the map". The device page's "Manage plans" link
-  cannot be added from an integration either (HA has no hook for it), so the plan select
-  stays the device page's part.
-
-The plan as written:
-
-Plans are a robot setting, not map geometry: which areas, in what order. Today they are
-edited in the Yard editor's Plans section. Move editing to where the robot's other
-controls live, and keep only what needs the map in the editor (route preview, picking
-areas by clicking them).
-
-**Where it goes:**
-- **A plan card on the Yarbo dashboard** (the strategy): the plans with their areas,
-  New, Edit (name and areas as a checklist, then the order), Delete with a confirm, and
-  Start.
-- **The device page**, as far as HA allows: the plan select stays. Add a "Manage plans"
-  link to the dashboard card, because the device page cannot host a custom editor.
-
-**How:**
-- **A custom Lovelace card** (`custom:yarbie-plans-card`), served beside the dashboard
-  strategy and placed in its first column. It uses the existing `yarbie/plans/*`
-  commands, so the backend does not change.
-- Writes keep the same rails: the write lock, the busy check, the kill switch, untested
-  firmware.
-- The Yard editor's Plans section shrinks to a list with **Route** and **Edit on the
-  dashboard**. When a plan's route is shown, its areas are highlighted on the map.
-- **Optional:** with the editor open, clicking areas on the map adds them to the plan
-  being edited, which the card would offer as "Pick on the map".
+- Not built: picking a plan's areas on the map. The device page cannot get a "Manage
+  plans" link either (HA has no hook for it), so the plan select is the device page's
+  part.
 
 ### 4. Schedule editor (built; step 1 still open)
 
-**Status.** The "then build" part is done on `feature/plans-schedules-areas`, tested
-against the simulator only. **Step 1 is not done: captures from the Yarbo app are still
+**Status.** Built and tested against the simulator only. **Step 1 is not done: captures from the Yarbo app are still
 needed**, so nothing below claims what the numbers mean.
 - `yarbie/schedules/list|save|delete` under the write rails (lock, busy, kill switch,
   untested firmware).
@@ -558,7 +516,7 @@ needed**, so nothing below claims what the numbers mean.
 When step 1 is done, change `schedules.READING`, `weekdays()` and `occurrences()` and the
 card's labels together.
 
-The plan as written:
+Background:
 
 yarbo-local has verified `read_schedules`, `save_schedule` and `del_schedule`. But only a
 *disabled* schedule has ever been stored on a real robot. What `schedule_type`,
@@ -573,30 +531,15 @@ not known. The app sent 3, 1 and 2.
   history show.
 - Add what was learnt to the fork's `protocol/` (commands and codes), then pull it in.
 
-**Then build:**
-- **Entities:**
-  - A `calendar` entity showing upcoming scheduled runs, so they appear in HA's
-    calendar and automations can see them.
-  - A `switch` per schedule to enable or disable it.
-- **A schedule card** on the Yarbo dashboard: list, add, edit (plan, days, start and end
-  time, return method, resume progress), enable/disable, delete. It sits next to the
-  plan card from TODO 3.
-- **Websocket commands** `yarbie/schedules/list|save|delete`, under the same write rails.
-- **Run history:** a run started by a schedule says so ("started by schedule
-  <name>"). The run log can match the start against the schedule's time.
-- **Rain:** whether to skip a scheduled run when it is raining, as an option, which needs
-  the rain-pause blueprint's logic at start time.
-
 ### 5. Area settings: a bulk editor (done; moved to the dashboard in TODO 6)
 
 Asked for: "something like a spreadsheet where I can set a subset of area configuration
 options to all or some areas at the same time in order to easily keep them in sync."
 
-Built on `feature/plans-schedules-areas` as the **Area settings** view of the Yard
-editor (`frontend/src/areaTable.ts`): a header button switches between the map and it,
-and an area's details in the map view link to it. It lives in the panel rather than a
-card because the panel is admin-only, like every settings write, and has the width a
-table of 30 columns needs.
+Built as a table (`frontend/src/areaTable.ts`), first in the Yard editor and since TODO 6
+on the Yarbo dashboard's full-width **Area settings** view, in
+`custom:yarbie-area-settings-card`. The editor's area details link to it. Non-admins see
+it read-only; the writes refuse them.
 
 - **Rows** are the work areas; **columns** their mowing pattern (`algorithm_type`, an
   area record field, written with `update_area`) and the mower area parameters
@@ -631,7 +574,10 @@ table of 30 columns needs.
   
 ### 6. Keep the Yard editor to editing the map (done)
 
-Built on `editor-scope`, checked in a local HA 2026.10.2 with the simulator:
+The Yard editor holds only what it takes to edit the map: zones, pathways, sidewalks,
+area shapes and names, the change list and apply, map backups, imagery and its
+alignment. Everything else is on the Yarbo dashboard, where the robot's other controls
+are. Built and checked in a local HA 2026.10.2 with the simulator:
 - **Area settings** is the dashboard's "Area settings" view: a `panel` view the strategy
   adds per robot (`area-settings`, or `<device id>-area-settings` with several robots),
   holding `custom:yarbie-area-settings-card` (`areaSettingsCard.ts`). `areaTable.ts` is now
@@ -656,8 +602,9 @@ Where it differs from the plan:
 - **Reads opened to every user.** Dashboards are seen by non-admins, so the commands the
   cards read with no longer require an admin (see the websocket API above). The imagery
   list does, since its tile URL carries the Google key: non-admins see the free photos.
-- **The single-area form sends through `yarbie/area_settings/apply`**, not
-  `area_params/save`, so it gets the same rails, backup and notification as the table.
+- **The single-area form sends through `yarbie/area_settings/apply`**, so it gets the
+  same rails, backup and notification as the table. (The per-area
+  `yarbie/area_params/*` commands it used before were then removed.)
   It also sets the mowing pattern; the editor's Selected no longer has a pattern picker
   (the change list still sends a pattern from an imported map).
 - **Links:** `?area=<id>` (Area settings view), `?run=<key>` or `?run=last`, and
@@ -668,111 +615,28 @@ Where it differs from the plan:
 - The cards talk to each other with a window event (`yarbie-run-shown`): picking a run
   on the runs card shades it on the yard card.
 
-The plan as written:
+### 7. A build and release process (done)
 
-Builds on #5 (plan and schedule cards, and TODO 5: the Area settings table), which
-adds the cards and the view this moves.
+The built panel used to be committed, because HACS installed the repository as it stood
+and Home Assistant never runs `npm`. Every rebuild added another ~1.5 MB bundle to the
+history, any two branches that rebuilt conflicted in `www/`, nothing checked the bundle
+matched `frontend/src`, and there was no CI to catch a file missing from git.
 
-The Yard editor should hold only what it takes to edit the map: zones, pathways,
-sidewalks, area shapes and names, the change list and apply, map backups, imagery and
-its alignment. Everything else moves to the Yarbo dashboard, where the robot's other
-controls already are. Plans moved there in TODO 3; this does the same for the rest.
+Now (README, Releasing):
+- CI on every push and PR: pytest, `ty`, the frontend typecheck and build, the vendored
+  copy's check, hassfest and the HACS action.
+- Pushing a `vX.Y.Z` tag that matches `manifest.json` runs CI and publishes its
+  `yarbie.zip` on a GitHub release, which is what HACS installs (`zip_release` in
+  `hacs.json`). `www/` is not in git.
 
-**Moves to the dashboard:**
-- **Area settings** (the TODO 5 table). It becomes a full-width dashboard view, "Area
-  settings": a `panel` view the strategy adds, holding a `custom:yarbie-area-settings-card`
-  built from `areaTable.ts`. It uses the same `yarbie/area_settings/*` commands, rails and
-  backups.
-  - **Who can use it:** dashboards are seen by non-admins, while settings writes stay
-    admin-only. For non-admins the card shows the table read-only, and the writes still
-    refuse them.
-- **The single-area mowing settings form** (the Areas tab's pattern, cutting height,
-  passes, speed). These are settings, not map geometry: they belong in the same view,
-  with one area picked.
-- **Runs** (TODO 1): the run list, its plan filter and a run's timeline become a
-  `custom:yarbie-runs-card` in the dashboard's Recent column, next to the logbook.
-  - The run's areas, shaded by what was finished, can't go on the editor's map once it's
-    gone from there. They're drawn on a dashboard map (below).
-
-**A read-only map card for what is shown, not edited.** The editor's map also hosts views
-that edit nothing:
-- a past run's areas
-- the route preview
-- the current run's progress
-- the wear heatmap
-
-These go to one `custom:yarbie-yard-card` on the dashboard: MapLibre with the same
-imagery and alignment, no drawing tools, and layers picked by what you asked to see. It
-takes the place of the map image on the dashboard. It also lets the editor stop polling
-run progress, and stop following route-preview and heatmap jobs.
-
-**What the editor keeps:**
-- the drawing tools
-- the Selected and Changes sections
-- History (map backups) and imagery alignment
-- area names and shapes; an area's mowing settings are a link to the dashboard view
-
-The Plans and Areas sections, the Runs list, the wear heatmap, the route preview and the
-current-run overlay all leave. The header loses the Map / Area settings switch.
-
-**Things to settle while doing it:**
-- **Links from HA to the right place:** the editor's "area settings for this area", and
-  the device page's plan and run entities, should open the dashboard view with that area
-  or run selected. The cards read a hash or query parameter for this.
-- **The `image` entity:** it stays for other dashboards and for automations; only the
-  Yarbo dashboard swaps it for the yard card.
-- **Code layout:** `main.ts` gets smaller. The cards share map drawing (layers, imagery,
-  alignment) with the editor through a module both bundles import, not a copy. The cards
-  bundle stays loaded on every page, so the MapLibre part loads only when a yard card is
-  on screen.
-
-### 7. A real build and release process (stop committing built JS) (done)
-
-Today the Vite output in `custom_components/yarbie/www/` is committed, because HACS
-installs the repository as it stands and Home Assistant never runs `npm`. That costs:
-- **History:** every rebuild stores another ~1.5 MB editor bundle. `main` held 17 versions
-  of `www/` (about 10 MB before compression) after 7 rebuilds.
-- **Conflicts:** the file names carry content hashes, so any two branches that rebuild
-  conflict in `www/`.
-- **Drift:** nothing checks that the committed bundle matches `frontend/src`.
-
-There is also no CI at all. A missing file (the vendored protocol data, kept out by a
-`.gitignore` rule) reached GitHub, and only a fresh clone showed it.
-
-**The process to build:**
-- **CI on every push and PR** (GitHub Actions):
-  - `pytest` against the simulator
-  - `ty check custom_components tests`
-  - `npm ci && npm run typecheck && npm run build`
-  - `python3 scripts/vendor_yarbo_local.py --check`
-  - A check that the integration loads from a clean checkout (the fresh-clone test above),
-    with HA's own `hassfest` and the HACS validation action for the manifest, `hacs.json`
-    and translations.
-- **Releases from tags:** pushing `vX.Y.Z` runs the same checks, builds the frontend, and
-  zips `custom_components/yarbie` (with `www/` built) as `yarbie.zip` on a GitHub release.
-  - The tag must match `manifest.json`'s `version`, which the workflow checks.
-  - Release notes come from the commits since the last tag (or a `CHANGELOG.md`).
-- **HACS installs the release, not the branch:** `hacs.json` gets `"zip_release": true`
-  and `"filename": "yarbie.zip"`. HACS then offers versions, and updating is a release
-  away.
-- **Stop committing `www/`:** add it to `.gitignore` and remove the built files from git.
-  Locally `npm run build` or `npm run watch` still fill it, so `scripts/dev_ha.sh` works as
-  now. `panel.py` already logs and skips the panel when the build is missing.
-  - The vendored yarbo-local copy stays committed: it is small text, and its own check
-    guards it.
-- **Docs:** README sections on releasing (bump the version, tag, push) and on installing a
-  specific version from HACS.
-
-**Order:** land this after the open branches that rebuild `www/` (#5, #6), or rebase them
-onto it and drop their `www/` changes. From then on, a branch never commits build output.
-
-**Built** (branch `build-release`, after #5 and #6 merged), as planned except:
+Details:
 - **CI builds the zip on every run.** `scripts/build_release_zip.py` zips git's files in
   `custom_components/yarbie` plus the built `www/` (no `__pycache__`, tests or symlinks,
   fixed timestamps, so the same tree gives the same zip). CI then runs the test suite
-  against the unzipped copy, the fresh-clone check applied to what HACS installs. Each run
+  against the unzipped copy, so a file missing from what HACS installs fails CI. Each run
   keeps the zip as an artifact, and `release.yml` publishes CI's zip rather than building
-  its own. Running `release.yml` by hand is a dry run that stops there, even with a tag as its ref.
+  its own. Running `release.yml` by hand is a dry run that stops there, even with a tag
+  as its ref.
 - **The zip's root is the integration folder.** HACS extracts a `zip_release` asset
   straight into `custom_components/<domain>` (`download_zip_files` in HACS's
   `repositories/base.py`), so `manifest.json` sits at the root, not under
@@ -799,11 +663,13 @@ onto it and drop their `www/` changes. From then on, a branch never commits buil
   - battery, activity and head sensors; charging and problem binary sensors
   - buttons: beep, return to dock, pause, resume, stop
   - all-lights group, the `lawn_mower` entity, job lifecycle event, GPS tracker
-  - RTK status, heading, satellites, rain, planning, emergency stop, the 7 light channels
+  - RTK status, heading, satellites, rain, planning, emergency stop
   - `start_plan`, `set_lights`, pause/resume/return to dock
   - diagnostics, DHCP discovery, three blueprints
 - **Changed:**
-  - Charging power becomes wireless charger output voltage and current.
+  - Charging power is not offered yet: the wireless charger fields' scale is unresolved.
+  - The 7 light channels are one light, since `light_ctrl` sets them together;
+    `set_lights` still sets channels one by one.
   - The buzzer switch becomes the sound switch (`set_sound_param`).
   - Rain is on by default.
 - **Dropped:**
@@ -819,14 +685,14 @@ onto it and drop their `www/` changes. From then on, a branch never commits buil
     - fault binary sensors (off by default)
   - **Actions:** `get_map`.
   - **Rails:** the untested-firmware Repairs issue and the kill switch.
-  - **The Yard editor panel:** map edits with backups, plans, area settings, route
-    preview, wear heatmap.
-  - **Records:** logbook entries and notifications for map changes.
-  - **Run history** (TODO 1).
+  - **The Yard editor panel:** map edits with backups, and smoothing.
+  - **Dashboard cards:** plans, schedules, runs, area settings, and the yard map with
+    the route preview, the current run and the wear map.
+  - **Records:** notifications and events for map and area settings changes.
+  - **Run history** (TODO 1) and last-run sensors.
+  - **Schedules:** a switch per schedule and a calendar (TODO 4).
 
 ## Open items
 
 - yarbo-local caches controller ownership. Check that the session notices when the phone
   app takes the controller, and take it again before each write batch if it doesn't.
-- Before cutover, list the markus-lassfolk entity IDs used in automations and dashboards,
-  so they can be renamed to match.
