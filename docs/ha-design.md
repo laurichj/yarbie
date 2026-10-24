@@ -88,8 +88,8 @@ three jobs, using one connection to the robot:
 - the map editor, as a sidebar panel inside HA;
 - map backups and the safety rails around every write.
 
-We drop the standalone FastAPI server and the Docker image. There is no non-HA run mode.
-Development uses a local HA container with the simulator.
+It replaced a standalone FastAPI server and its Docker image. There is no non-HA run
+mode. Development uses a throwaway local HA (`scripts/dev_ha.sh`) with the simulator.
 
 Only the mower is in scope. Snow and leaf blower heads are out.
 
@@ -101,7 +101,7 @@ Only the mower is in scope. Snow and leaf blower heads are out.
 | Existing integrations | Replaced, not built on | Reimplementing is cheap with yarbo-local, and one owner removes contention for the robot's controller role |
 | Protocol library | **yarbo-local**, forked and vendored with `git subtree` | It has a registry of 57 commands verified against the phone app and refuses anything else. All its internal imports are relative, so it vendors cleanly |
 | Library dropped | `python-yarbo` | It exposes raw `send_command`, which is exactly what the rails exist to stop |
-| Editor UI | The existing MapLibre/TypeScript editor, rewrapped as an HA custom panel | Keeps the work already done. It talks to the backend over HA's websocket |
+| Editor UI | The existing MapLibre/TypeScript editor, rewrapped as an HA custom panel | Keeps the work already done. It talks to the integration over HA's websocket |
 | Server stack dropped | FastAPI, uvicorn, pydantic, python-dotenv, httpx, Dockerfile, compose, env `config.py`, `cloud` source, `yarbo-data-sdk` | HA provides HTTP, websocket, auth, config and storage |
 | Remote access | HA's own (companion app or whatever remote access HA has) | No separate exposure |
 
@@ -117,46 +117,54 @@ role is the Yarbo phone app. Reads never take it.
 
 ```
 custom_components/yarbie/
-  manifest.json  __init__.py  const.py  config_flow.py  coordinator.py
+  manifest.json  __init__.py  const.py  config_flow.py  coordinator.py  entity.py
   lawn_mower.py sensor.py binary_sensor.py button.py select.py switch.py
-  light.py device_tracker.py event.py image.py
-  diagnostics.py  repairs.py  services.yaml  strings.json  translations/en.json
-  websocket.py    editor API (websocket commands and job subscriptions)
-  panel.py        registers the sidebar panel and serves www/
-  editor/
-    mapdoc.py diff.py heatmap.py demo.py    moved unchanged from backend/yarbie
-    apply.py      today's MapService.apply/_send and rails
-    backups.py    today's BackupStore, plus actor and metadata
-    discovery.py  today's discovery, plus a DHCP hint
-    imagery.py    Google Map Tiles session, on HA's aiohttp session and Store
-    jobs.py       long-running robot calls (route preview, history read)
-  _vendor/yarbo_local/                      copied from third_party/yarbo-local
-  www/yarbie-panel.js                       built from frontend/; not in git
+  light.py device_tracker.py event.py image.py calendar.py
+  diagnostics.py  repairs.py  services.py  services.yaml  strings.json  translations/en.json
+  robot.py        the robot session (LAN or the built-in simulator)
+  discovery.py    finds the robot by the serial in its heartbeats
+  jobs.py         long-running robot calls (route preview)
+  runlog.py       yarbie's own record of each run, in /config/yarbie/runs
+  schedules.py    the schedules, and the one reading of their numbers it assumes
+  imagery.py      Google Map Tiles session, on HA's aiohttp session and Store
+  units.py        short lengths in the user's units
+  websocket.py    the panel's and cards' API (websocket commands and job subscriptions)
+  panel.py        registers the sidebar panel, the cards and the strategy; serves www/
+  editor/         the map logic, with no Home Assistant imports
+    mapdoc.py diff.py service.py backups.py   the map as GeoJSON, edits, applying, backups
+    smooth.py routes.py runs.py heatmap.py    smoothing, routes, run history, wear
+    render.py demo.py                         the image entity's SVG, the demo yard
+  _vendor/yarbo_local/                        copied from third_party/yarbo-local
+  www/                                        built from frontend/; not in git
 frontend/            TypeScript source. A Vite library build writes www/
+third_party/yarbo-local/   the library, as a git subtree
 .github/workflows/   ci.yml (every push and PR), release.yml (vX.Y.Z tags)
-scripts/             dev_ha.sh, check.sh, vendor_yarbo_local.py, build_release_zip.py
+scripts/             dev_ha.sh, check.sh, vendor_yarbo_local.py, build_release_zip.py,
+                     smooth_report.py
 blueprints/automation/yarbie/
 tests/               pytest-homeassistant-custom-component, against the simulator
 hacs.json
-docs/ha-design.md  docs/mockups/
+docs/ha-design.md  docs/area-smoothing.md  docs/mockups/
 ```
 
-`backend/`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` and
-`pyproject.toml`'s server entry points are gone (phase 8). `pyproject.toml` stays for dev
-tools: pytest, `ty`, the HA test harness, and the integration's `aiomqtt` requirement.
+`pyproject.toml` is for development only: pytest, `ty`, the HA test harness, and the
+integration's `aiomqtt` requirement.
+
+The mockups in `docs/mockups/` are the early design, drawn before the build. The UI has
+moved on since (plans, schedules, runs and area settings are on the dashboard; there is
+no phone layout yet), so read them as the idea, not as screenshots.
 
 ## Library: vendoring and staying in sync
 
-- Fork `yarbo-local/yarbo-local` to our GitHub. Bring it in with
-  `git subtree add --prefix custom_components/yarbie/_vendor/yarbo_local …`, starting from
-  the commit pinned today (`395bdb5`).
-- Updates come in with `git subtree pull` as **one commit**, with the upstream SHA in the
-  message. Never edit the vendored copy by hand. Fixes go to the fork first, then come in
-  by subtree.
+- The library is forked to `laurichj/yarbo-local` and held as a `git subtree` at
+  `third_party/yarbo-local`, from the commit it was verified with (`395bdb5` upstream at
+  first; later pulls come from the fork, remote `yarbo-local`). Fixes go to the fork
+  first, then come in with `git subtree pull`.
+- `scripts/vendor_yarbo_local.py` copies it into `custom_components/yarbie/_vendor`
+  (see "Vendoring layout" above). The copy is never edited by hand, and CI's `--check`
+  fails on a stale or hand-edited one.
 - `manifest.json` requirements are `aiomqtt==<pin>` only. aiomqtt needs `paho-mqtt>=2.1`,
   which HA already ships, and `pyyaml` is already in HA.
-- **A CI check** keeps the vendored `commands.yaml` version and its tested firmware equal
-  to `const.TESTED_FIRMWARE`.
 - **A rail in HA:**
   - If the robot reports firmware outside the tested set, raise a Repairs issue and turn
     **map, plan and settings writes off** until you confirm after redoing the first-time
