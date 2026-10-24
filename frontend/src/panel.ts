@@ -1,5 +1,5 @@
 // The Yard editor as a Home Assistant panel. HA registers it with embed_iframe, so the
-// editor has a document of its own and main.ts finds its elements as it always has.
+// editor has a document of its own and main.ts looks its elements up by id in it.
 // HA sets ``hass`` on the element whenever anything changes; the API keeps the latest.
 
 import maplibreCss from "maplibre-gl/dist/maplibre-gl.css?inline";
