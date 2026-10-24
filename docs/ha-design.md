@@ -269,16 +269,17 @@ Mockups: `mockups/03-editor-changes.png`, `mockups/04-plans-route-preview.png`,
 - The integration serves the module from `www/` with a content hash for caching.
 
 **Frontend:**
-- `main.ts` becomes a `<yarbie-panel>` custom element. HA passes it the `hass` object.
-- `api.ts` keeps its typed functions but calls `hass.callWS` instead of `fetch`.
-- Robot status comes from `hass.states`, pushed live. The 4-second status poll goes away.
-- It uses HA theme variables, so it follows light and dark mode.
-- On a phone (narrow screens) it switches to floating tool buttons and a bottom sheet.
+- `panel.ts` defines the `<yarbie-panel>` element HA creates, in its own iframe, and
+  passes it the `hass` object; `main.ts` is the editor.
+- `api.ts` holds the typed calls, over `hass.callWS`.
+- The status pill polls `yarbie/info` (see "Where the build differs" above).
+- Not yet: HA theme colours, and a phone layout (floating tool buttons and a bottom
+  sheet were the idea).
 
 **Map:**
 - MapLibre with satellite imagery: Google if a key is set, otherwise the free sources
-  already built in.
-- Imagery alignment offset, as today.
+  built in.
+- An imagery alignment offset, display only, kept in the browser.
 
 **Tools:** select, no-go zone, pathway, sidewalk, reshape area, undo, smoothing, backups.
 
@@ -301,27 +302,31 @@ the current run and the wear map.
 Writes, route previews, backups and the imagery list check for an admin user; the reads
 the dashboard cards show (info, map, progress, heatmap, plans, areas, area settings,
 runs) are open to every user, who get what was last read (TODO 6). Every write records
-`connection.user.name` as the actor.
+`connection.user.name` as the actor. Each command takes an optional `entry_id` to pick
+the robot when there are several.
 
-| Command | Replaces |
-|---|---|
-| `yarbie/map` | `GET /api/map` |
-| `yarbie/preview` | `POST /api/map/preview` |
-| `yarbie/apply` `{features, revision}` | `POST /api/map/apply` |
-| `yarbie/backups/list`, `yarbie/backups/get` | `/api/backups*` |
-| `yarbie/imagery` | `/api/imagery` |
-| `yarbie/plans/list|save|delete` | `/api/plans*` |
-| `yarbie/area_params/get|save` | `/api/areas/{id}/mower-params` |
-| `yarbie/areas/list` | (new) area ids and names, for the cards |
-| `yarbie/schedules/list|save|delete` | (new, TODO 4) |
-| `yarbie/area_settings/get|apply` | (new, TODO 5) every area's settings; a bulk change |
-| `yarbie/progress/subscribe` | `/api/progress` (it is pushed now) |
-| `yarbie/route/start`, `yarbie/job/subscribe` | `/api/plans/{id}/route` |
-| `yarbie/heatmap/start` | `/api/heatmap` |
-| `yarbie/export` | `/api/export.geojson` |
+| Command | Who | What |
+|---|---|---|
+| `yarbie/info` | everyone | connection, writability, activity, battery, position, smoothing units |
+| `yarbie/map` | everyone | the map as GeoJSON, with its revision |
+| `yarbie/preview` | admin | the writes an edited map would send, with warnings |
+| `yarbie/smooth` | admin | smoothed outlines (`area-smoothing.md`) |
+| `yarbie/apply` `{features, revision}` | admin | send the edits, after a backup |
+| `yarbie/backups/list`, `yarbie/backups/get` | admin | map and area settings backups |
+| `yarbie/imagery` | admin | imagery that needs a key (Google) |
+| `yarbie/progress` | everyone | the current run's progress |
+| `yarbie/heatmap` | everyone | estimated wear from the run history |
+| `yarbie/plans/list` | everyone | the plans |
+| `yarbie/plans/save|delete` | admin | change the plans (TODO 3) |
+| `yarbie/schedules/list|save|delete` | admin | the schedules (TODO 4) |
+| `yarbie/areas/list` | everyone | area ids and names, for the cards |
+| `yarbie/area_settings/get` | everyone | every area's settings (TODO 5) |
+| `yarbie/area_settings/apply` | admin | a change to one or many areas' settings |
+| `yarbie/runs/list`, `yarbie/runs/get` | everyone | the run history (TODO 1) |
+| `yarbie/route/start`, `yarbie/job/subscribe` | admin | a route preview, as a job (below) |
 
-`/api/status` and `/api/client-log` go away: status comes from entities, and panel errors
-go to HA's system log.
+Opened with `?debug` in its address, the panel writes its errors and what each click on
+the map did to HA's system log (`system_log.write`).
 
 ### Long-running robot calls are jobs
 
@@ -334,12 +339,14 @@ controller.
 How the job version works:
 - `yarbie/route/start` returns a job id at once. The integration runs **at most one**
   preview per (plan id, map revision) and keeps the result.
-- The panel subscribes to the job. After a reconnect or reload it picks up the running
-  job or the stored result. A second click joins the existing job.
-- While it runs, the activity sensor reads "computing route", and map writes wait for it.
-- yarbo-local has no verified command to cancel the robot's calculation. So the panel
-  offers **"Stop waiting"**, not "Cancel".
-- The plan-history read for the wear heatmap uses the same mechanism.
+- The yard card subscribes to the job (`yarbie/job/subscribe` sends its state at once,
+  then again when it ends). After a reconnect or reload, starting the same preview
+  again joins the running job or gets the kept result, so a second click never sends a
+  second command.
+- A preview is refused while a plan is running or paused: if it took the controller, it
+  would pause the run.
+- yarbo-local has no verified command to cancel the robot's calculation, so there is no
+  Cancel; the card shows how long it has been computing.
 
 ## Safety rails (all kept, all inside the integration)
 
@@ -361,8 +368,9 @@ How the job version works:
 |---|---|
 | Map and area settings backups | `/config/yarbie/backups/` (included in HA backups) |
 | Run log (TODO 1) | `/config/yarbie/runs/` |
-| Robot address, Google tile session, imagery offset | HA `Store` (`.storage/yarbie.*`) |
-| Settings | Config entry and its options |
+| Google tile session, the run tracker's state | HA `Store` (`.storage/yarbie.*`) |
+| Robot address, accepted firmware, settings | Config entry and its options |
+| Imagery choice and alignment, Area settings columns | The browser (`localStorage`), per user and device |
 
 ## Migration from markus-lassfolk's integration
 
